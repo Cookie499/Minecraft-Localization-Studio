@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import nbt from 'prismarine-nbt';
+import { gzip, ungzip } from 'pako';
 import { createEntry } from '../extractors/base.js';
+import { parseNbt } from '../nbt/parse.js';
 import type { VirtualFileTree } from '../types/virtual-file.js';
 import { buildPatchedTree } from './json-patch.js';
 
 describe('buildPatchedTree', () => {
-  it('replaces literal components with stable keys and emits language files', () => {
+  it('replaces literal components with stable keys and emits language files', async () => {
     const tree: VirtualFileTree = [{
       path: 'data/demo/advancements/start.json',
       content: JSON.stringify({
@@ -32,7 +35,7 @@ describe('buildPatchedTree', () => {
     title.translation = 'Welcome, adventurer';
     description.translation = 'Start the journey';
 
-    const built = buildPatchedTree(tree, [title, description], {
+    const built = await buildPatchedTree(tree, [title, description], {
       sourceLocale: 'en_us',
       targetLocale: 'zh_cn',
     });
@@ -48,7 +51,7 @@ describe('buildPatchedTree', () => {
     });
   });
 
-  it('creates the target lang file and leaves the source lang file unchanged', () => {
+  it('creates the target lang file and leaves the source lang file unchanged', async () => {
     const sourcePath = 'assets/demo/lang/en_us.json';
     const targetPath = 'assets/demo/lang/zh_cn.json';
     const sourceContent = JSON.stringify({ 'item.demo.name': 'Old text' });
@@ -67,11 +70,44 @@ describe('buildPatchedTree', () => {
     });
     entry.translation = 'New text';
 
-    const built = buildPatchedTree(tree, [entry]);
+    const built = await buildPatchedTree(tree, [entry]);
     const source = built.find((file) => file.path === sourcePath);
     const target = built.find((file) => file.path === targetPath);
     expect(source?.content).toBe(sourceContent);
     expect(JSON.parse(String(target?.content))).toEqual({ 'item.demo.name': 'New text' });
     expect(built.some((file) => file.path === 'assets/mls/lang/en_us.json')).toBe(false);
+  });
+
+  it('writes translated text back to gzip-compressed NBT files', async () => {
+    const path = 'world/level.dat';
+    const source = new Uint8Array(nbt.writeUncompressed({
+      type: 'compound',
+      name: '',
+      value: {
+        LevelName: { type: 'string', value: 'Original world' },
+      },
+    }));
+    const tree: VirtualFileTree = [{
+      path,
+      content: gzip(source),
+      isBinary: true,
+    }];
+    const entry = createEntry('project', {
+      original: 'Original world',
+      sourceFile: path,
+      sourceType: 'level.dat',
+      sourcePath: 'LevelName',
+    });
+    entry.translation = 'Translated world';
+
+    const built = await buildPatchedTree(tree, [entry]);
+    const patched = built.find((file) => file.path === path);
+    expect(patched?.content).toBeInstanceOf(Uint8Array);
+    const bytes = patched!.content as Uint8Array;
+    expect(Array.from(bytes.slice(0, 2))).toEqual([0x1f, 0x8b]);
+
+    const root = await parseNbt(ungzip(bytes));
+    const levelName = (root.value as Record<string, { value: string }>).LevelName;
+    expect(levelName?.value).toBe('Translated world');
   });
 });

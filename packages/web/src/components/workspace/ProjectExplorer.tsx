@@ -26,7 +26,7 @@ interface ProjectExplorerProps {
 
 function typeIcon(kind: ExplorerNode['kind']) {
   if (kind === 'root') return Languages;
-  if (kind === 'type') return Folder;
+  if (kind === 'type' || kind === 'group') return Folder;
   return FileJson;
 }
 
@@ -53,6 +53,10 @@ function TreeNode({
     (selection.kind === 'type' &&
       node.kind === 'type' &&
       selection.sourceType === node.sourceType) ||
+    (selection.kind === 'mca-group' &&
+      node.kind === 'group' &&
+      selection.dimension === node.dimension &&
+      selection.category === node.category) ||
     (selection.kind === 'file' &&
       node.kind === 'file' &&
       selection.sourceType === node.sourceType &&
@@ -82,7 +86,7 @@ function TreeNode({
         ) : (
           <span className="w-3 shrink-0" />
         )}
-        {node.kind === 'type' && open ? (
+        {(node.kind === 'type' || node.kind === 'group') && open ? (
           <FolderOpen className="h-3.5 w-3.5 shrink-0 text-primary/80" />
         ) : (
           <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

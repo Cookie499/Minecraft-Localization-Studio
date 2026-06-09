@@ -139,9 +139,17 @@ export default function App() {
       alert('Import a project first');
       return;
     }
-    const patched = buildPatchedTree(tree, entries);
-    const blob = await exportTreeAsZip(patched, `${projectName || 'localized'}.zip`);
-    downloadBlob(blob, `${projectName || 'localized'}.zip`);
+    setLoading(true);
+    setProgress('Writing translations to project files...');
+    try {
+      const patched = await buildPatchedTree(tree, entries);
+      setProgress('Creating ZIP archive...');
+      const blob = await exportTreeAsZip(patched, `${projectName || 'localized'}.zip`);
+      downloadBlob(blob, `${projectName || 'localized'}.zip`);
+      setProgress('Build complete');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const onLoadExisting = async () => {

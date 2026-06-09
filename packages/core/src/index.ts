@@ -60,7 +60,7 @@ export {
 export type { ExtractedText, TextPatch } from './text-component/index.js';
 
 export { parseNbt, serializeNbt } from './nbt/parse.js';
-export { extractFromNbtTree } from './nbt/traverse.js';
+export { extractFromNbtTree, shouldExtractNbtString } from './nbt/traverse.js';
 
 export {
   buildPatchedTree,

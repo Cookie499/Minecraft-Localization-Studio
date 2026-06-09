@@ -31,7 +31,12 @@ const columns = [
     header: 'Translation Key',
     size: 200,
     cell: (info) => (
-      <span className="font-mono text-[11px] text-muted-foreground">{info.getValue()}</span>
+      <span
+        className="w-full overflow-hidden whitespace-nowrap text-right font-mono text-[11px] text-muted-foreground [direction:rtl]"
+        title={info.getValue()}
+      >
+        <span className="[direction:ltr]">{info.getValue()}</span>
+      </span>
     ),
   }),
   columnHelper.accessor('original', {

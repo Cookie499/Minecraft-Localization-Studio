@@ -34,7 +34,7 @@ export async function extractAllFromTree(
     try {
       const part = await extractor.extract({ tree, projectId });
       const durationMs = Math.round(performance.now() - startedAt);
-      all.push(...part);
+      for (const entry of part) all.push(entry);
       console.info(
         `[MLS][extract:${extractor.id}] ${part.length} entries in ${durationMs}ms`,
       );

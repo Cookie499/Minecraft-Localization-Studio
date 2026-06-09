@@ -25,7 +25,7 @@ export async function extractMcaRegions(
     }
     try {
       const part = await extractFromMcaFile(file.content, file.path, projectId);
-      results.push(...part);
+      for (const entry of part) results.push(entry);
       console.info(`[MLS][mca] ${file.path}: ${part.length} translatable entries`);
     } catch (error) {
       console.error(`[MLS][mca] failed to parse ${file.path}`, error);

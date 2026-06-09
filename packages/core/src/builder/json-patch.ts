@@ -1,3 +1,7 @@
+import { gzip } from 'pako';
+import { patchMcaFile } from '../mca/parse.js';
+import { applyNbtTranslations } from '../nbt/patch.js';
+import { parseNbt, serializeNbt } from '../nbt/parse.js';
 import type { TranslationEntry } from '../types/translation-entry.js';
 import type { VirtualFile, VirtualFileTree } from '../types/virtual-file.js';
 import { getFileText } from '../types/virtual-file.js';
@@ -97,6 +101,45 @@ function upsertFile(tree: VirtualFileTree, file: VirtualFile): void {
   else tree.push(file);
 }
 
+async function applyBinaryPatches(
+  tree: VirtualFileTree,
+  entries: TranslationEntry[],
+): Promise<VirtualFileTree> {
+  const byFile = new Map<string, TranslationEntry[]>();
+  for (const entry of entries) {
+    if (!entry.translation) continue;
+    if (!['mca', 'structure', 'level.dat', 'playerdata'].includes(entry.sourceType)) continue;
+    const fileEntries = byFile.get(entry.sourceFile) ?? [];
+    fileEntries.push(entry);
+    byFile.set(entry.sourceFile, fileEntries);
+  }
+
+  const result = cloneTree(tree);
+  for (const [path, fileEntries] of byFile) {
+    const file = result.find((candidate) => candidate.path === path);
+    if (!file?.isBinary || !(file.content instanceof Uint8Array)) continue;
+
+    if (fileEntries[0]?.sourceType === 'mca') {
+      const patched = await patchMcaFile(file.content, fileEntries);
+      if (patched.applied > 0) file.content = patched.data;
+      continue;
+    }
+
+    try {
+      const wasGzip = file.content[0] === 0x1f && file.content[1] === 0x8b;
+      const root = await parseNbt(file.content);
+      const applied = applyNbtTranslations(root, fileEntries);
+      if (applied === 0) continue;
+      const encoded = await serializeNbt(root);
+      file.content = wasGzip ? gzip(encoded) : encoded;
+    } catch {
+      console.warn(`[MLS][build] failed to patch NBT file: ${path}`);
+    }
+  }
+
+  return result;
+}
+
 export function buildLanguageFiles(
   entries: TranslationEntry[],
   options: BuildOptions = {},
@@ -106,9 +149,10 @@ export function buildLanguageFiles(
   const namespace = options.namespace ?? 'mls';
   const source: Record<string, string> = {};
   const target: Record<string, string> = {};
+  const keyedSourceTypes = new Set(['pack.mcmeta', 'advancement', 'loot_table']);
 
   for (const entry of entries) {
-    if (entry.sourceType === 'lang') continue;
+    if (!keyedSourceTypes.has(entry.sourceType)) continue;
     if (entry.tags.includes('translate-key')) continue;
     source[entry.key] = entry.original;
     target[entry.key] = entry.translation || entry.original;
@@ -155,12 +199,13 @@ export function applyLangPatches(
   return result;
 }
 
-export function buildPatchedTree(
+export async function buildPatchedTree(
   tree: VirtualFileTree,
   entries: TranslationEntry[],
   options: BuildOptions = {},
-): VirtualFileTree {
-  const result = patchJsonFiles(applyLangPatches(cloneTree(tree), entries), entries);
+): Promise<VirtualFileTree> {
+  const binaryPatched = await applyBinaryPatches(tree, entries);
+  const result = patchJsonFiles(applyLangPatches(binaryPatched, entries), entries);
   for (const file of buildLanguageFiles(entries, options)) {
     upsertFile(result, file);
   }

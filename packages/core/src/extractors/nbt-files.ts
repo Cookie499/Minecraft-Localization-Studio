@@ -35,7 +35,7 @@ export async function extractStructureNbt(
 
   for (const file of files) {
     const part = await extractFromBinaryFile(file, projectId, 'structure');
-    results.push(...part);
+    for (const entry of part) results.push(entry);
   }
   return results;
 }
@@ -49,7 +49,7 @@ export async function extractLevelDat(
 
   for (const file of files) {
     const part = await extractFromBinaryFile(file, projectId, 'level.dat');
-    results.push(...part);
+    for (const entry of part) results.push(entry);
   }
   return results;
 }
@@ -63,7 +63,7 @@ export async function extractPlayerData(
 
   for (const file of files) {
     const part = await extractFromBinaryFile(file, projectId, 'playerdata');
-    results.push(...part);
+    for (const entry of part) results.push(entry);
   }
   return results;
 }
