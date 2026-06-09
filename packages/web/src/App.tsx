@@ -1,0 +1,214 @@
+import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  WorkspaceStore,
+  buildPatchedTree,
+  discoverScanTargets,
+  downloadBlob,
+  downloadJson,
+  exportTreeAsZip,
+  filterTreeBySelection,
+  filterTreeByTargets,
+  type ScanDiscovery,
+  type ScanSelection,
+  type TranslationEntry,
+  type VirtualFileTree,
+} from '@mls/core';
+import { ScanSelectionPanel } from '@/components/scan/ScanSelectionPanel';
+import { AppHeader } from '@/components/workspace/AppHeader';
+import { TranslationWorkspace } from '@/components/workspace/TranslationWorkspace';
+import { useDebouncedCallback } from '@/hooks/useDebounce';
+import { importAndExtract, importFromDirectoryPicker, importFromFileList } from '@/lib/import-project';
+
+interface PendingImport {
+  name: string;
+  tree: VirtualFileTree;
+  discovery: ScanDiscovery;
+}
+
+export default function App() {
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState('');
+  const [entries, setEntries] = useState<TranslationEntry[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState('');
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  const fileTreeRef = useRef<VirtualFileTree | null>(null);
+
+  const store = useMemo(() => new WorkspaceStore(), []);
+  const selectedEntry = useMemo(
+    () => entries.find((entry) => entry.id === selectedId) ?? null,
+    [entries, selectedId],
+  );
+
+  const persistEntry = useDebouncedCallback(async (entry: TranslationEntry) => {
+    await store.saveEntry(entry);
+  }, 400);
+
+  const updateEntry = useCallback(
+    (id: string, patch: Partial<TranslationEntry>) => {
+      setEntries((previous) => {
+        const next = previous.map((entry) => entry.id === id ? { ...entry, ...patch } : entry);
+        const updated = next.find((entry) => entry.id === id);
+        if (updated) void persistEntry(updated);
+        return next;
+      });
+    },
+    [persistEntry],
+  );
+
+  const prepareImport = (tree: VirtualFileTree, name: string) => {
+    const discovery = discoverScanTargets(tree);
+    console.info('[MLS][discovery]', {
+      project: name,
+      fileCount: tree.length,
+      targets: discovery.targets,
+      unassignedFileCount: discovery.unassignedFileCount,
+    });
+    setPendingImport({ name, tree, discovery });
+  };
+
+  const handleImport = async (
+    tree: VirtualFileTree,
+    name: string,
+    discovery: ScanDiscovery,
+    selection: ScanSelection,
+  ) => {
+    const selectedTree = filterTreeBySelection(tree, discovery, selection);
+    const buildTree = filterTreeByTargets(tree, discovery, selection.targetIds);
+    setLoading(true);
+    setProgress('Selection complete, extracting...');
+    setPendingImport(null);
+    fileTreeRef.current = buildTree;
+    console.info('[MLS][selection]', {
+      targetIds: selection.targetIds,
+      langPlans: selection.langPlans,
+      selectedFiles: selectedTree.map((file) => file.path),
+      preservedBuildFiles: buildTree.length,
+    });
+
+    try {
+      const { projectId: id, entries: extracted } = await importAndExtract(
+        selectedTree,
+        name,
+        (phase, count) => setProgress(`${phase}: ${count}`),
+        buildTree,
+        selection.langPlans,
+      );
+      setProjectId(id);
+      setProjectName(name);
+      setEntries(extracted);
+      setSelectedId(extracted[0]?.id ?? null);
+      setProgress(`Done: ${extracted.length} entries`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onFolderInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files?.length) return;
+    const tree = await importFromFileList(files);
+    const name = files[0]?.webkitRelativePath.split('/')[0] ?? 'Imported Project';
+    prepareImport(tree, name);
+    event.target.value = '';
+  };
+
+  const onZipInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const tree = await importFromFileList(event.target.files!);
+    prepareImport(tree, file.name.replace(/\.zip$/i, ''));
+    event.target.value = '';
+  };
+
+  const onPickDirectory = async () => {
+    const tree = await importFromDirectoryPicker();
+    if (tree) prepareImport(tree, 'Directory Project');
+  };
+
+  const onExportWorkspace = async () => {
+    if (!projectId) return;
+    const workspace = await store.exportProjectJson(projectId);
+    downloadJson(workspace, `${projectName || 'workspace'}.json`);
+  };
+
+  const onBuildZip = async () => {
+    const tree = fileTreeRef.current;
+    if (!tree) {
+      alert('Import a project first');
+      return;
+    }
+    const patched = buildPatchedTree(tree, entries);
+    const blob = await exportTreeAsZip(patched, `${projectName || 'localized'}.zip`);
+    downloadBlob(blob, `${projectName || 'localized'}.zip`);
+  };
+
+  const onLoadExisting = async () => {
+    const projects = await store.listProjects();
+    if (!projects.length) {
+      alert('No saved projects');
+      return;
+    }
+    const latest = projects[0]!;
+    const loaded = await store.listEntries(latest.id);
+    const tree = await store.loadFileTree(latest.id);
+    fileTreeRef.current = tree.length > 0 ? tree : null;
+    setProjectId(latest.id);
+    setProjectName(latest.name);
+    setEntries(loaded);
+    setSelectedId(loaded[0]?.id ?? null);
+  };
+
+  return (
+    <div className="flex h-screen flex-col">
+      <AppHeader
+        projectName={projectName}
+        entryCount={entries.length}
+        loading={loading}
+        progress={progress}
+        hasProject={!!projectId}
+        onFolderInput={(event) => void onFolderInput(event)}
+        onZipInput={(event) => void onZipInput(event)}
+        onPickDirectory={() => void onPickDirectory()}
+        onExportWorkspace={() => void onExportWorkspace()}
+        onBuildZip={() => void onBuildZip()}
+        onLoadExisting={() => void onLoadExisting()}
+      />
+
+      {pendingImport ? (
+        <ScanSelectionPanel
+          name={pendingImport.name}
+          tree={pendingImport.tree}
+          discovery={pendingImport.discovery}
+          onCancel={() => setPendingImport(null)}
+          onConfirm={(selection) => {
+            void handleImport(
+              pendingImport.tree,
+              pendingImport.name,
+              pendingImport.discovery,
+              selection,
+            );
+          }}
+        />
+      ) : (
+        <TranslationWorkspace
+          projectName={projectName}
+          entries={entries}
+          selectedId={selectedId}
+          onSelectEntry={(entry) => setSelectedId(entry.id)}
+          onTranslationChange={(translation) => {
+            if (!selectedEntry) return;
+            updateEntry(selectedEntry.id, {
+              translation,
+              status: translation ? 'translated' : 'untranslated',
+            });
+          }}
+          onStatusChange={(status) => {
+            if (selectedEntry) updateEntry(selectedEntry.id, { status });
+          }}
+        />
+      )}
+    </div>
+  );
+}

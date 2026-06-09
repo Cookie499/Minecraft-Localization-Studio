@@ -1,24 +1,16 @@
 {
-  "name": " ",
-  "version": "0.0.1",
-  "description": "",
+  "name": "minecraft-localization-studio",
+  "version": "0.1.0",
   "private": true,
-  "keywords": [
-    ""
+  "description": "Minecraft localization workspace",
+  "workspaces": [
+    "packages/*"
   ],
-  "license": "",
-  "author": "",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "webpack serve --open --config webpack.config.dev.js",
-    "build": "webpack --config webpack.config.prod.js"
+    "dev": "npm run dev -w @mls/web",
+    "build": "npm run build -w @mls/web",
+    "test": "npm run test -w @mls/core",
+    "preview": "npm run preview -w @mls/web"
   },
-  "devDependencies": {
-    "copy-webpack-plugin": "^11.0.0",
-    "html-webpack-plugin": "^5.6.0",
-    "webpack": "^5.91.0",
-    "webpack-cli": "^5.1.4",
-    "webpack-dev-server": "^5.0.4",
-    "webpack-merge": "^5.10.0"
-  }
+  "license": "MIT"
 }
