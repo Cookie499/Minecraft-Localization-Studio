@@ -4,7 +4,7 @@ import { listFiles, getFileText } from '../types/virtual-file.js';
 import { extractStrings, extractedDisplayText } from '../text-component/index.js';
 import { createEntry } from './base.js';
 
-const FUNCTION_PATTERN = /data\/[^/]+\/(function|functions)\/[^/]+\.mcfunction$/i;
+const FUNCTION_PATTERN = /data\/[^/]+\/(function|functions)\/.+\.mcfunction$/i;
 
 const COMMAND_PATTERNS = [
   /\btellraw\s+[^\s]+\s+/i,

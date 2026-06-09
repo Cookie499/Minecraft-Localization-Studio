@@ -5,7 +5,10 @@ import { createEntry } from '../extractors/base.js';
 const NBT_STRING_FIELD_BLACKLIST = new Set([
   'id',
   'type',
+  'Type',
   'Name',
+  'name',
+  'item_display',
   'SpawnType',
   'spawn_type',
   'Status',

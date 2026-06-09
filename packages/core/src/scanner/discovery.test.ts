@@ -50,4 +50,31 @@ describe('scan discovery', () => {
     expect(buildTree.some((file) => file.path.endsWith('ja_jp.json'))).toBe(true);
     expect(buildTree.some((file) => file.path.includes('/region/'))).toBe(false);
   });
+
+  it('discovers an expanded data pack ZIP as a separate target', () => {
+    const nestedTree: VirtualFileTree = [
+      {
+        path: 'saves/world/datapacks/demo.zip',
+        content: new Uint8Array(),
+        isBinary: true,
+      },
+      {
+        path: 'saves/world/datapacks/demo.zip!/pack.mcmeta',
+        content: '{}',
+        isBinary: false,
+      },
+      {
+        path: 'saves/world/datapacks/demo.zip!/data/demo/advancements/start.json',
+        content: '{}',
+        isBinary: false,
+      },
+    ];
+
+    const discovery = discoverScanTargets(nestedTree);
+    const dataPack = discovery.targets.find((target) => target.kind === 'data-pack');
+
+    expect(dataPack?.rootPath).toBe('saves/world/datapacks/demo.zip!');
+    expect(dataPack?.name).toBe('demo.zip');
+    expect(dataPack?.fileCount).toBe(2);
+  });
 });

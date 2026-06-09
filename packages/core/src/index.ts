@@ -18,6 +18,7 @@ export {
   scanFromDirectoryHandle,
   pickDirectory,
   scanFromZipFile,
+  expandNestedDataPackZips,
   discoverScanTargets,
   filterTreeBySelection,
   filterTreeByTargets,
@@ -64,7 +65,6 @@ export { extractFromNbtTree, shouldExtractNbtString } from './nbt/traverse.js';
 
 export {
   buildPatchedTree,
-  buildLanguageFiles,
   applyLangPatches,
 } from './builder/json-patch.js';
 export type { BuildOptions } from './builder/json-patch.js';

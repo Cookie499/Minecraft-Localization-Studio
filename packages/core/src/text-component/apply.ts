@@ -38,7 +38,7 @@ function setAtPath(root: unknown, path: string, value: string): unknown {
   } else if (isRecord(current)) {
     if (last === 'text' || last === 'translate') {
       if (last === 'translate') {
-        // Keep translate key; store translation in text sibling if missing
+        delete current.translate;
         current.text = value;
       } else {
         current.text = value;

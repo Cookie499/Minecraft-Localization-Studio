@@ -104,7 +104,9 @@ export function discoverScanTargets(tree: VirtualFileTree): ScanDiscovery {
       id: targetId(kind, rootPath),
       kind,
       rootPath,
-      name: rootPath ? basename(rootPath) : hasAssets && hasData ? 'Combined Pack' : 'Pack Root',
+      name: rootPath
+        ? basename(rootPath).replace(/!$/, '')
+        : hasAssets && hasData ? 'Combined Pack' : 'Pack Root',
       fileCount: files.length,
       langFiles,
     });

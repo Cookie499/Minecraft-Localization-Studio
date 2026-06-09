@@ -3,7 +3,11 @@ export {
   scanFromDirectoryHandle,
   pickDirectory,
 } from './directory.js';
-export { scanFromZipFile, scanFromZipBuffer } from './zip.js';
+export {
+  scanFromZipFile,
+  scanFromZipBuffer,
+  expandNestedDataPackZips,
+} from './zip.js';
 export {
   discoverScanTargets,
   filterTreeBySelection,

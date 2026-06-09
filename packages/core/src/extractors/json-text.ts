@@ -5,7 +5,7 @@ import { extractedDisplayText, extractStrings } from '../text-component/index.js
 import { createEntry } from './base.js';
 
 const ADVANCEMENT_PATTERN = /data\/[^/]+\/(advancement|advancements)\/.+\.json$/i;
-const LOOT_PATTERN = /data\/[^/]+\/loot_tables\/.+\.json$/i;
+const LOOT_PATTERN = /data\/[^/]+\/(loot_table|loot_tables)\/.+\.json$/i;
 const MCMETA_PATTERN = /pack\.mcmeta$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

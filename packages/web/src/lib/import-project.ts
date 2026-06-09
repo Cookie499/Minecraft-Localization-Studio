@@ -1,6 +1,7 @@
 import {
   scanFromFileList,
   scanFromZipFile,
+  expandNestedDataPackZips,
   pickDirectory,
   extractAllFromTree,
   extractLangPlans,
@@ -13,7 +14,8 @@ import {
 } from '@mls/core';
 
 export async function importFromDirectoryPicker(): Promise<VirtualFileTree | null> {
-  return pickDirectory();
+  const tree = await pickDirectory();
+  return tree ? expandNestedDataPackZips(tree) : null;
 }
 
 export async function importFromFileList(files: FileList): Promise<VirtualFileTree> {
@@ -21,7 +23,7 @@ export async function importFromFileList(files: FileList): Promise<VirtualFileTr
   if (first?.name.endsWith('.zip')) {
     return scanFromZipFile(first);
   }
-  return scanFromFileList(files);
+  return expandNestedDataPackZips(await scanFromFileList(files));
 }
 
 export function runExtractInWorker(
