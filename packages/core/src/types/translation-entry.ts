@@ -31,3 +31,17 @@ export interface ProjectWorkspace {
   project: ProjectMeta;
   entries: TranslationEntry[];
 }
+
+export interface CompleteProjectFile {
+  format: 'minecraft-localization-studio-project';
+  version: 1;
+  exportedAt: string;
+  project: ProjectMeta;
+  entries: TranslationEntry[];
+  files: Array<{
+    path: string;
+    isBinary: boolean;
+    encoding: 'utf8' | 'base64';
+    content: string;
+  }>;
+}

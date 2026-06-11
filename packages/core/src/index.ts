@@ -3,6 +3,7 @@ export type {
   TranslationStatus,
   ProjectMeta,
   ProjectWorkspace,
+  CompleteProjectFile,
 } from './types/translation-entry.js';
 
 export type { VirtualFile, VirtualFileTree, VirtualFileContent } from './types/virtual-file.js';
@@ -33,6 +34,10 @@ export type {
 } from './scanner/index.js';
 
 export { WorkspaceStore, createProjectId, getWorkspaceDb } from './workspace/store.js';
+export {
+  createCompleteProjectFile,
+  parseCompleteProjectFile,
+} from './workspace/project-file.js';
 
 export { extractLangPlans } from './extractors/lang.js';
 export {
@@ -61,7 +66,14 @@ export {
 export type { ExtractedText, TextPatch } from './text-component/index.js';
 
 export { parseNbt, serializeNbt } from './nbt/parse.js';
-export { extractFromNbtTree, shouldExtractNbtString } from './nbt/traverse.js';
+export {
+  DEFAULT_NBT_CONTAINER_FIELD_BLACKLIST,
+  DEFAULT_NBT_SCAN_OPTIONS,
+  DEFAULT_NBT_STRING_FIELD_BLACKLIST,
+  extractFromNbtTree,
+  shouldExtractNbtString,
+} from './nbt/traverse.js';
+export type { NbtScanOptions } from './nbt/traverse.js';
 
 export {
   buildPatchedTree,

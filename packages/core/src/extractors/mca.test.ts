@@ -45,14 +45,16 @@ describe('findMcaFiles', () => {
     ]);
   });
 
-  it('patches translated text inside a chunk and preserves timestamps', async () => {
+  it('patches a complete JSON text component and preserves timestamps', async () => {
     const source = makeMca();
     const entries = await extractFromMcaFile(source, 'world/region/r.0.0.mca', 'project');
-    const extra = entries.find((entry) => entry.original === ' Extra');
-    expect(extra).toBeDefined();
-    extra!.translation = ' Translated';
+    const component = entries.find(
+      (entry) => entry.original === '{"text":"Root","extra":[{"text":" Extra"}]}',
+    );
+    expect(component).toBeDefined();
+    component!.translation = '{"text":"Translated root","extra":[{"text":" Translated"}]}';
 
-    const patched = await patchMcaFile(source, [extra!]);
+    const patched = await patchMcaFile(source, [component!]);
     expect(patched.applied).toBe(1);
     expect(new DataView(patched.data.buffer).getUint32(4096, false)).toBe(123456);
 
@@ -61,6 +63,8 @@ describe('findMcaFiles', () => {
       'world/region/r.0.0.mca',
       'project',
     );
-    expect(reparsed.map((entry) => entry.original)).toEqual(['Root', ' Translated']);
+    expect(reparsed.map((entry) => entry.original)).toEqual([
+      '{"text":"Translated root","extra":[{"text":" Translated"}]}',
+    ]);
   });
 });

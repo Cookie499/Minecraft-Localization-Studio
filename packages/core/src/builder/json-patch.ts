@@ -110,6 +110,111 @@ function patchJsonFiles(tree: VirtualFileTree, entries: TranslationEntry[]): Vir
   });
 }
 
+const MCFUNCTION_COMMAND_PATTERNS = [
+  /\btellraw\s+[^\s]+\s+/i,
+  /\btitle\s+[^\s]+\s+(title|subtitle|actionbar)\s+/i,
+  /\bbossbar\s+[^\s]+\s+name\s+/i,
+  /\bteam\s+add\s+[^\s]+\s+/i,
+];
+
+function commandPayloadStart(line: string): number | null {
+  for (const pattern of MCFUNCTION_COMMAND_PATTERNS) {
+    const match = pattern.exec(line);
+    if (match?.index !== undefined) return match.index + match[0].length;
+  }
+  return null;
+}
+
+function joinContinuedCommandLines(lines: string[], startIndex: number, endIndex: number): string {
+  let result = lines[startIndex] ?? '';
+  for (let index = startIndex + 1; index <= endIndex; index++) {
+    result = result.replace(/\\\s*$/, '') + (lines[index] ?? '').trimStart();
+  }
+  return result;
+}
+
+function patchMcFunctionFiles(
+  tree: VirtualFileTree,
+  entries: TranslationEntry[],
+): VirtualFileTree {
+  const byFile = new Map<string, TranslationEntry[]>();
+  for (const entry of entries) {
+    if (entry.sourceType !== 'mcfunction' || !entry.translation) continue;
+    const fileEntries = byFile.get(entry.sourceFile) ?? [];
+    fileEntries.push(entry);
+    byFile.set(entry.sourceFile, fileEntries);
+  }
+
+  return tree.map((file) => {
+    const fileEntries = byFile.get(file.path);
+    const text = getFileText(file);
+    if (!fileEntries?.length || text === null) return file;
+
+    const lines = text.split(/\r?\n/);
+    const entriesByLine = new Map<number, {
+      endIndex: number;
+      entries: TranslationEntry[];
+      sourcePathPrefix: string;
+    }>();
+    for (const entry of fileEntries) {
+      const match = entry.sourcePath.match(/^line:(\d+)(?:-(\d+))?(.*)$/);
+      if (!match) continue;
+      const lineIndex = Number(match[1]) - 1;
+      const endIndex = Number(match[2] ?? match[1]) - 1;
+      const sourcePathPrefix = match[2]
+        ? `line:${match[1]}-${match[2]}`
+        : `line:${match[1]}`;
+      const group = entriesByLine.get(lineIndex) ?? {
+        endIndex,
+        entries: [],
+        sourcePathPrefix,
+      };
+      group.entries.push(entry);
+      entriesByLine.set(lineIndex, group);
+    }
+
+    const groups = [...entriesByLine.entries()].sort(([a], [b]) => b - a);
+    for (const [lineIndex, group] of groups) {
+      const logicalLine = joinContinuedCommandLines(lines, lineIndex, group.endIndex);
+      const payloadStart = commandPayloadStart(logicalLine);
+      if (payloadStart === null) continue;
+
+      const wholeEntry = group.entries.find(
+        (entry) => entry.sourcePath === group.sourcePathPrefix,
+      );
+      if (wholeEntry) {
+        lines.splice(
+          lineIndex,
+          group.endIndex - lineIndex + 1,
+          `${logicalLine.slice(0, payloadStart)}${wholeEntry.translation}`,
+        );
+        continue;
+      }
+
+      try {
+        const component = JSON.parse(logicalLine.slice(payloadStart).trim()) as unknown;
+        const translations = group.entries.flatMap((entry) => {
+          const path = entry.sourcePath.slice(group.sourcePathPrefix.length);
+          return path ? [{ path, newText: entry.translation }] : [];
+        });
+        if (translations.length > 0) {
+          lines.splice(
+            lineIndex,
+            group.endIndex - lineIndex + 1,
+            `${logicalLine.slice(0, payloadStart)}${JSON.stringify(
+              applyTranslation(component, translations),
+            )}`,
+          );
+        }
+      } catch {
+        // Invalid command JSON is preserved unchanged.
+      }
+    }
+
+    return { ...file, content: lines.join(text.includes('\r\n') ? '\r\n' : '\n') };
+  });
+}
+
 function upsertFile(tree: VirtualFileTree, file: VirtualFile): void {
   const index = tree.findIndex((candidate) => candidate.path === file.path);
   if (index >= 0) tree[index] = file;
@@ -194,7 +299,8 @@ export async function buildPatchedTree(
   options: BuildOptions = {},
 ): Promise<VirtualFileTree> {
   const binaryPatched = await applyBinaryPatches(tree, entries);
-  const result = patchJsonFiles(applyLangPatches(binaryPatched, entries), entries);
+  const functionPatched = patchMcFunctionFiles(binaryPatched, entries);
+  const result = patchJsonFiles(applyLangPatches(functionPatched, entries), entries);
 
   const namespace = options.namespace ?? 'mls';
   const packMetaPath = 'pack.mcmeta';

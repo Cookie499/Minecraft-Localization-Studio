@@ -6,11 +6,13 @@ import {
   extractAllFromTree,
   extractLangPlans,
   createProjectId,
+  DEFAULT_NBT_SCAN_OPTIONS,
   WorkspaceStore,
   type VirtualFileTree,
   type TranslationEntry,
   type ProjectMeta,
   type LangTranslationPlan,
+  type NbtScanOptions,
 } from '@mls/core';
 
 export async function importFromDirectoryPicker(): Promise<VirtualFileTree | null> {
@@ -29,6 +31,7 @@ export async function importFromFileList(files: FileList): Promise<VirtualFileTr
 export function runExtractInWorker(
   tree: VirtualFileTree,
   projectId: string,
+  nbtOptions: NbtScanOptions,
   onProgress?: (phase: string, count: number) => void,
 ): Promise<TranslationEntry[]> {
   return new Promise((resolve, reject) => {
@@ -66,7 +69,7 @@ export function runExtractInWorker(
       reject(new Error('Worker error'));
     };
 
-    worker.postMessage({ type: 'extract', projectId, tree });
+    worker.postMessage({ type: 'extract', projectId, tree, nbtOptions });
   });
 }
 
@@ -76,6 +79,7 @@ export async function importAndExtract(
   onProgress?: (phase: string, count: number) => void,
   storedTree: VirtualFileTree = tree,
   langPlans: LangTranslationPlan[] = [],
+  nbtOptions: NbtScanOptions = DEFAULT_NBT_SCAN_OPTIONS,
 ): Promise<{ projectId: string; entries: TranslationEntry[] }> {
   const projectId = createProjectId();
   const store = new WorkspaceStore();
@@ -103,7 +107,7 @@ export async function importAndExtract(
 
   let entries: TranslationEntry[];
   try {
-    entries = await runExtractInWorker(tree, projectId, onProgress);
+    entries = await runExtractInWorker(tree, projectId, nbtOptions, onProgress);
   } catch (error) {
     console.warn('[MLS][extract] worker failed; retrying on main thread', error);
     entries = await extractAllFromTree(tree, projectId, (p) => {
@@ -112,7 +116,7 @@ export async function importAndExtract(
         `${p.durationMs}ms, ${p.count} total`,
       );
       onProgress?.(p.phase, p.count);
-    });
+    }, undefined, nbtOptions);
   }
   const langEntries = extractLangPlans(storedTree, projectId, langPlans);
   entries = [...langEntries, ...entries];

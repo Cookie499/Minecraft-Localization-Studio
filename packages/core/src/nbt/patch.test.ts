@@ -26,6 +26,21 @@ async function rootWithText() {
 }
 
 describe('applyNbtTranslations', () => {
+  it('replaces a complete JSON text component as one string', async () => {
+    const root = await rootWithText();
+    const entry = createEntry('project', {
+      original: '{"text":"Root","extra":[{"text":" Extra"}]}',
+      sourceFile: 'level.dat',
+      sourceType: 'level.dat',
+      sourcePath: 'CustomName',
+    });
+    entry.translation = '{"text":"Translated root","color":"gold"}';
+
+    expect(applyNbtTranslations(root, [entry])).toBe(1);
+    const customName = (root.value as Record<string, { value: string }>).CustomName!;
+    expect(customName.value).toBe('{"text":"Translated root","color":"gold"}');
+  });
+
   it('patches one text-component part without changing its siblings', async () => {
     const root = await rootWithText();
     const entry = createEntry('project', {

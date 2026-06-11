@@ -1,7 +1,7 @@
 import { deflate, gzip, inflate, ungzip } from 'pako';
 import { parseNbt, serializeNbt } from '../nbt/parse.js';
 import { applyNbtTranslations } from '../nbt/patch.js';
-import { extractFromNbtTree } from '../nbt/traverse.js';
+import { extractFromNbtTree, type NbtScanOptions } from '../nbt/traverse.js';
 import type { TranslationEntry } from '../types/translation-entry.js';
 
 const SECTOR_BYTES = 4096;
@@ -79,6 +79,7 @@ export async function extractFromMcaFile(
   data: Uint8Array,
   filePath: string,
   projectId: string,
+  nbtOptions?: NbtScanOptions,
 ): Promise<TranslationEntry[]> {
   const entries: TranslationEntry[] = [];
   if (data.length < SECTOR_BYTES * 2) return entries;
@@ -99,7 +100,16 @@ export async function extractFromMcaFile(
     try {
       const root = await parseNbt(nbtBytes);
       const chunkPath = `chunk[${chunkIndex}]`;
-      extractFromNbtTree(root, chunkPath, filePath, projectId, 'mca', entries);
+      extractFromNbtTree(
+        root,
+        chunkPath,
+        filePath,
+        projectId,
+        'mca',
+        entries,
+        '',
+        nbtOptions,
+      );
     } catch {
       /* skip chunk */
     }

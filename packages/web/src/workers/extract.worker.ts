@@ -1,10 +1,11 @@
 import { extractAllFromTree } from '@mls/core';
-import type { VirtualFileTree } from '@mls/core';
+import type { NbtScanOptions, VirtualFileTree } from '@mls/core';
 
 export interface ExtractWorkerRequest {
   type: 'extract';
   projectId: string;
   tree: VirtualFileTree;
+  nbtOptions: NbtScanOptions;
 }
 
 export interface ExtractWorkerResponse {
@@ -18,7 +19,7 @@ export interface ExtractWorkerResponse {
 }
 
 self.onmessage = async (event: MessageEvent<ExtractWorkerRequest>) => {
-  const { type, projectId, tree } = event.data;
+  const { type, projectId, tree, nbtOptions } = event.data;
   if (type !== 'extract') return;
 
   try {
@@ -31,7 +32,7 @@ self.onmessage = async (event: MessageEvent<ExtractWorkerRequest>) => {
         durationMs: p.durationMs,
       };
       self.postMessage(msg);
-    });
+    }, undefined, nbtOptions);
     const done: ExtractWorkerResponse = { type: 'done', entries };
     self.postMessage(done);
   } catch (err) {

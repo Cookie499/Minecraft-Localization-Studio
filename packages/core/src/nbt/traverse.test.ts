@@ -1,10 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { extractFromNbtTree } from './traverse.js';
+import {
+  DEFAULT_NBT_SCAN_OPTIONS,
+  extractFromNbtTree,
+  type NbtScanOptions,
+} from './traverse.js';
 import type { TranslationEntry } from '../types/translation-entry.js';
 
 function extract(node: unknown): TranslationEntry[] {
   const entries: TranslationEntry[] = [];
   extractFromNbtTree(node, '', 'region/r.0.0.mca', 'project', 'mca', entries);
+  return entries;
+}
+
+function extractWithOptions(node: unknown, options: NbtScanOptions): TranslationEntry[] {
+  const entries: TranslationEntry[] = [];
+  extractFromNbtTree(
+    node,
+    '',
+    'region/r.0.0.mca',
+    'project',
+    'mca',
+    entries,
+    '',
+    options,
+  );
   return entries;
 }
 
@@ -40,11 +59,45 @@ describe('extractFromNbtTree', () => {
     });
 
     expect(entries.map((entry) => entry.original)).toEqual([
-      'Named chest',
-      'Display text',
-      'Modern name',
+      '{"text":"Named chest"}',
+      '{"text":"Display text"}',
+      '"Modern name"',
       'Unknown mod text',
     ]);
+    expect(entries.map((entry) => entry.sourcePath)).toEqual([
+      'CustomName',
+      'DisplayText',
+      'minecraft:custom_name',
+      'mod_description',
+    ]);
+  });
+
+  it('uses configurable string and container blacklists', () => {
+    const node = {
+      type: 'compound',
+      value: {
+        Name: { type: 'string', value: 'Allowed name' },
+        Description: { type: 'string', value: 'Blocked description' },
+        CustomData: {
+          type: 'compound',
+          value: {
+            Label: { type: 'string', value: 'Blocked child' },
+          },
+        },
+      },
+    };
+    const options: NbtScanOptions = {
+      stringFieldBlacklist: DEFAULT_NBT_SCAN_OPTIONS.stringFieldBlacklist.filter(
+        (field) => field !== 'Name',
+      ).concat('Description'),
+      containerFieldBlacklist: [
+        ...DEFAULT_NBT_SCAN_OPTIONS.containerFieldBlacklist,
+        'CustomData',
+      ],
+    };
+
+    expect(extractWithOptions(node, options).map((entry) => entry.original))
+      .toEqual(['Allowed name']);
   });
 
   it('extracts lore and book page lists', () => {
@@ -63,10 +116,27 @@ describe('extractFromNbtTree', () => {
     });
 
     expect(entries.map((entry) => entry.original)).toEqual([
-      'Lore line',
-      'Second line',
-      'Book page',
+      '{"text":"Lore line"}',
+      '{"text":"Second line"}',
+      '{"text":"Book page"}',
     ]);
+  });
+
+  it('keeps a complete JSON text component in one entry', () => {
+    const entries = extract({
+      type: 'compound',
+      value: {
+        CustomName: {
+          type: 'string',
+          value: '{"text":"Root","extra":[{"text":" Extra"}]}',
+        },
+      },
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.original).toBe('{"text":"Root","extra":[{"text":" Extra"}]}');
+    expect(entries[0]?.sourcePath).toBe('CustomName');
+    expect(entries[0]?.tags).toContain('whole-json');
   });
 
   it('ignores JSON-encoded empty strings', () => {

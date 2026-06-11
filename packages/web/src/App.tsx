@@ -12,6 +12,7 @@ import {
   type ScanSelection,
   type TranslationEntry,
   type VirtualFileTree,
+  DEFAULT_NBT_SCAN_OPTIONS,
 } from '@mls/core';
 import { ScanSelectionPanel } from '@/components/scan/ScanSelectionPanel';
 import { AppHeader } from '@/components/workspace/AppHeader';
@@ -57,6 +58,24 @@ export default function App() {
     [persistEntry],
   );
 
+  const updateEntries = useCallback(
+    (ids: string[], patch: Partial<TranslationEntry>) => {
+      const idSet = new Set(ids);
+      setEntries((previous) => {
+        const updated: TranslationEntry[] = [];
+        const next = previous.map((entry) => {
+          if (!idSet.has(entry.id)) return entry;
+          const nextEntry = { ...entry, ...patch };
+          updated.push(nextEntry);
+          return nextEntry;
+        });
+        void Promise.all(updated.map((entry) => store.saveEntry(entry)));
+        return next;
+      });
+    },
+    [store],
+  );
+
   const prepareImport = (tree: VirtualFileTree, name: string) => {
     const discovery = discoverScanTargets(tree);
     console.info('[MLS][discovery]', {
@@ -94,6 +113,7 @@ export default function App() {
         (phase, count) => setProgress(`${phase}: ${count}`),
         buildTree,
         selection.langPlans,
+        selection.nbtOptions ?? DEFAULT_NBT_SCAN_OPTIONS,
       );
       setProjectId(id);
       setProjectName(name);
@@ -129,8 +149,43 @@ export default function App() {
 
   const onExportWorkspace = async () => {
     if (!projectId) return;
-    const workspace = await store.exportProjectJson(projectId);
-    downloadJson(workspace, `${projectName || 'workspace'}.json`);
+    setLoading(true);
+    setProgress('Packing complete project...');
+    try {
+      const workspace = await store.exportCompleteProject(projectId);
+      downloadJson(workspace, `${projectName || 'workspace'}.mlsproject`);
+      setProgress('Project export complete');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onProjectInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setLoading(true);
+    setProgress('Importing complete project...');
+    try {
+      const raw = JSON.parse(await file.text()) as unknown;
+      const imported = await store.importCompleteProject(raw);
+      fileTreeRef.current = imported.tree;
+      setPendingImport(null);
+      setProjectId(imported.project.id);
+      setProjectName(imported.project.name);
+      setEntries(imported.entries);
+      setSelectedId(imported.entries[0]?.id ?? null);
+      setProgress(
+        `Imported ${imported.entries.length} entries and ${imported.tree.length} files`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      alert(`Project import failed: ${message}`);
+      setProgress('Project import failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const onBuildZip = async () => {
@@ -179,6 +234,7 @@ export default function App() {
         onFolderInput={(event) => void onFolderInput(event)}
         onZipInput={(event) => void onZipInput(event)}
         onPickDirectory={() => void onPickDirectory()}
+        onProjectInput={(event) => void onProjectInput(event)}
         onExportWorkspace={() => void onExportWorkspace()}
         onBuildZip={() => void onBuildZip()}
         onLoadExisting={() => void onLoadExisting()}
@@ -214,6 +270,12 @@ export default function App() {
           }}
           onStatusChange={(status) => {
             if (selectedEntry) updateEntry(selectedEntry.id, { status });
+          }}
+          onBatchTranslationChange={(ids, translation) => {
+            updateEntries(ids, {
+              translation,
+              status: translation ? 'translated' : 'untranslated',
+            });
           }}
         />
       )}

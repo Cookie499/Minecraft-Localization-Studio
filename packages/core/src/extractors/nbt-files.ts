@@ -2,7 +2,7 @@ import type { TranslationEntry } from '../types/translation-entry.js';
 import type { VirtualFile, VirtualFileTree } from '../types/virtual-file.js';
 import { listFiles } from '../types/virtual-file.js';
 import { parseNbt } from '../nbt/parse.js';
-import { extractFromNbtTree } from '../nbt/traverse.js';
+import { extractFromNbtTree, type NbtScanOptions } from '../nbt/traverse.js';
 
 const STRUCTURE_PATTERN = /\.nbt$/i;
 const PLAYERDATA_PATTERN = /playerdata\/[^/]+\.dat$/i;
@@ -11,13 +11,14 @@ async function extractFromBinaryFile(
   file: VirtualFile,
   projectId: string,
   sourceType: string,
+  nbtOptions?: NbtScanOptions,
 ): Promise<TranslationEntry[]> {
   if (!file.isBinary || !(file.content instanceof Uint8Array)) return [];
 
   const entries: TranslationEntry[] = [];
   try {
     const root = await parseNbt(file.content);
-    extractFromNbtTree(root, '', file.path, projectId, sourceType, entries);
+    extractFromNbtTree(root, '', file.path, projectId, sourceType, entries, '', nbtOptions);
   } catch {
     /* skip invalid nbt */
   }
@@ -27,6 +28,7 @@ async function extractFromBinaryFile(
 export async function extractStructureNbt(
   tree: VirtualFileTree,
   projectId: string,
+  nbtOptions?: NbtScanOptions,
 ): Promise<TranslationEntry[]> {
   const results: TranslationEntry[] = [];
   const files = listFiles(tree, STRUCTURE_PATTERN).filter(
@@ -34,7 +36,7 @@ export async function extractStructureNbt(
   );
 
   for (const file of files) {
-    const part = await extractFromBinaryFile(file, projectId, 'structure');
+    const part = await extractFromBinaryFile(file, projectId, 'structure', nbtOptions);
     for (const entry of part) results.push(entry);
   }
   return results;
@@ -43,12 +45,13 @@ export async function extractStructureNbt(
 export async function extractLevelDat(
   tree: VirtualFileTree,
   projectId: string,
+  nbtOptions?: NbtScanOptions,
 ): Promise<TranslationEntry[]> {
   const results: TranslationEntry[] = [];
   const files = listFiles(tree, /level\.dat$/i);
 
   for (const file of files) {
-    const part = await extractFromBinaryFile(file, projectId, 'level.dat');
+    const part = await extractFromBinaryFile(file, projectId, 'level.dat', nbtOptions);
     for (const entry of part) results.push(entry);
   }
   return results;
@@ -57,12 +60,13 @@ export async function extractLevelDat(
 export async function extractPlayerData(
   tree: VirtualFileTree,
   projectId: string,
+  nbtOptions?: NbtScanOptions,
 ): Promise<TranslationEntry[]> {
   const results: TranslationEntry[] = [];
   const files = listFiles(tree, PLAYERDATA_PATTERN);
 
   for (const file of files) {
-    const part = await extractFromBinaryFile(file, projectId, 'playerdata');
+    const part = await extractFromBinaryFile(file, projectId, 'playerdata', nbtOptions);
     for (const entry of part) results.push(entry);
   }
   return results;
@@ -71,11 +75,12 @@ export async function extractPlayerData(
 export async function extractAllNbtFiles(
   tree: VirtualFileTree,
   projectId: string,
+  nbtOptions?: NbtScanOptions,
 ): Promise<TranslationEntry[]> {
   const [structures, level, players] = await Promise.all([
-    extractStructureNbt(tree, projectId),
-    extractLevelDat(tree, projectId),
-    extractPlayerData(tree, projectId),
+    extractStructureNbt(tree, projectId, nbtOptions),
+    extractLevelDat(tree, projectId, nbtOptions),
+    extractPlayerData(tree, projectId, nbtOptions),
   ]);
   return [...structures, ...level, ...players];
 }

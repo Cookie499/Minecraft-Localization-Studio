@@ -28,6 +28,19 @@ describe('extractStrings', () => {
     expect(texts).toContain(' World');
   });
 
+  it('preserves leading newlines in string components', () => {
+    const result = extractStrings({
+      text: '',
+      extra: [
+        { text: 'Divided' },
+        { text: ' Guidance' },
+        '\n\nBeyond this point',
+      ],
+    });
+
+    expect(result[2]?.text).toBe('\n\nBeyond this point');
+  });
+
   it('extracts array root component', () => {
     const result = extractStrings([{ text: 'Hello' }]);
     expect(result).toHaveLength(1);

@@ -24,7 +24,7 @@ describe('parseNbt', () => {
 
     extractFromNbtTree(root, '', 'level.dat', 'project', 'level.dat', entries);
 
-    expect(entries.map((entry) => entry.original)).toContain('Hello from NBT');
+    expect(entries.map((entry) => entry.original)).toContain('{"text":"Hello from NBT"}');
   });
 
   it('parses gzip-compressed Java NBT', async () => {
@@ -33,6 +33,6 @@ describe('parseNbt', () => {
 
     extractFromNbtTree(root, '', 'level.dat', 'project', 'level.dat', entries);
 
-    expect(entries.map((entry) => entry.original)).toContain('Hello from NBT');
+    expect(entries.map((entry) => entry.original)).toContain('{"text":"Hello from NBT"}');
   });
 });

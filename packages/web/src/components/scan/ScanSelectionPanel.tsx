@@ -7,9 +7,14 @@ import type {
   VirtualFileTree,
 } from '@mls/core';
 import { filterTreeBySelection } from '@mls/core';
-import { Database, FolderArchive, Languages, PackageOpen } from 'lucide-react';
+import { Database, FolderArchive, Languages, PackageOpen, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  loadNbtScanOptions,
+  normalizeNbtScanOptions,
+  saveNbtScanOptions,
+} from '@/lib/nbt-scan-settings';
 
 interface ScanSelectionPanelProps {
   name: string;
@@ -48,6 +53,20 @@ export function ScanSelectionPanel({
 }: ScanSelectionPanelProps) {
   const [targetIds, setTargetIds] = useState<string[]>([]);
   const [langConfigs, setLangConfigs] = useState<Record<string, LangConfig>>({});
+  const initialNbtOptions = useMemo(loadNbtScanOptions, []);
+  const [stringFieldBlacklist, setStringFieldBlacklist] = useState(
+    initialNbtOptions.stringFieldBlacklist.join('\n'),
+  );
+  const [containerFieldBlacklist, setContainerFieldBlacklist] = useState(
+    initialNbtOptions.containerFieldBlacklist.join('\n'),
+  );
+  const nbtOptions = useMemo(
+    () => normalizeNbtScanOptions({
+      stringFieldBlacklist: stringFieldBlacklist.split(/\r?\n/),
+      containerFieldBlacklist: containerFieldBlacklist.split(/\r?\n/),
+    }),
+    [containerFieldBlacklist, stringFieldBlacklist],
+  );
 
   const langPlans = useMemo(() => {
     const plans: LangTranslationPlan[] = [];
@@ -72,8 +91,8 @@ export function ScanSelectionPanel({
   }, [discovery.targets, langConfigs]);
 
   const selection = useMemo(
-    () => ({ targetIds, langPlans }),
-    [targetIds, langPlans],
+    () => ({ targetIds, langPlans, nbtOptions }),
+    [targetIds, langPlans, nbtOptions],
   );
   const selectedFileCount = useMemo(
     () => filterTreeBySelection(tree, discovery, selection).length,
@@ -248,6 +267,40 @@ export function ScanSelectionPanel({
           </div>
         )}
 
+        <details className="mt-3 rounded border border-border bg-sidebar">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs font-medium">
+            <Settings2 className="h-4 w-4 text-muted-foreground" />
+            NBT scan blacklists
+            <span className="ml-auto text-[10px] font-normal text-muted-foreground">
+              Applied when extraction starts
+            </span>
+          </summary>
+          <div className="grid gap-3 border-t border-border p-4 md:grid-cols-2">
+            <label className="text-xs text-muted-foreground">
+              String field blacklist
+              <textarea
+                className="mt-1 min-h-[220px] w-full resize-y rounded-sm border border-input bg-input p-2.5 font-mono text-xs leading-relaxed text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                value={stringFieldBlacklist}
+                onChange={(event) => setStringFieldBlacklist(event.target.value)}
+              />
+              <span className="mt-1 block text-[10px]">
+                Matching string fields are not extracted. One exact field name per line.
+              </span>
+            </label>
+            <label className="text-xs text-muted-foreground">
+              Container field blacklist
+              <textarea
+                className="mt-1 min-h-[220px] w-full resize-y rounded-sm border border-input bg-input p-2.5 font-mono text-xs leading-relaxed text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                value={containerFieldBlacklist}
+                onChange={(event) => setContainerFieldBlacklist(event.target.value)}
+              />
+              <span className="mt-1 block text-[10px]">
+                Matching containers and all descendants are skipped during extraction.
+              </span>
+            </label>
+          </div>
+        </details>
+
         <div className="mt-5 flex items-center justify-between rounded border border-border bg-panel-header p-3">
           <div className="text-xs text-muted-foreground">
             {targetIds.length} target(s), {langPlans.length} language plan(s),
@@ -255,7 +308,10 @@ export function ScanSelectionPanel({
           </div>
           <Button
             disabled={targetIds.length === 0 || selectedFileCount === 0}
-            onClick={() => onConfirm(selection)}
+            onClick={() => {
+              const savedOptions = saveNbtScanOptions(nbtOptions);
+              onConfirm({ ...selection, nbtOptions: savedOptions });
+            }}
           >
             Start extraction
           </Button>

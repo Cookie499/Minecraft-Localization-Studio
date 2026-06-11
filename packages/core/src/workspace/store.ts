@@ -1,6 +1,13 @@
 import Dexie, { type Table } from 'dexie';
-import type { ProjectMeta, ProjectWorkspace, TranslationEntry } from '../types/translation-entry.js';
+import type {
+  CompleteProjectFile,
+  ProjectMeta,
+  ProjectWorkspace,
+  TranslationEntry,
+} from '../types/translation-entry.js';
 import type { VirtualFileTree, VirtualFileContent } from '../types/virtual-file.js';
+import { makeEntryId } from '../utils/id.js';
+import { createCompleteProjectFile, parseCompleteProjectFile } from './project-file.js';
 
 interface StoredVirtualFile {
   id: string;
@@ -127,6 +134,57 @@ export class WorkspaceStore {
     }
     const entries = await this.listEntries(projectId);
     return { project, entries };
+  }
+
+  async exportCompleteProject(projectId: string): Promise<CompleteProjectFile> {
+    const project = await this.getProject(projectId);
+    if (!project) throw new Error(`Project not found: ${projectId}`);
+    const [entries, tree] = await Promise.all([
+      this.listEntries(projectId),
+      this.loadFileTree(projectId),
+    ]);
+    return createCompleteProjectFile(project, entries, tree);
+  }
+
+  async importCompleteProject(value: unknown): Promise<{
+    project: ProjectMeta;
+    entries: TranslationEntry[];
+    tree: VirtualFileTree;
+  }> {
+    const decoded = parseCompleteProjectFile(value);
+    const projectId = createProjectId();
+    const project: ProjectMeta = {
+      ...decoded.project,
+      id: projectId,
+      importedAt: new Date().toISOString(),
+      fileCount: decoded.tree.length,
+    };
+    const entries = decoded.entries.map((entry) => ({
+      ...entry,
+      id: makeEntryId(projectId, entry.sourceFile, entry.sourcePath),
+      projectId,
+    }));
+    const files = decoded.tree.map((file) => ({
+      id: `${projectId}:${file.path}`,
+      projectId,
+      path: file.path,
+      content: file.content,
+      isBinary: file.isBinary,
+    }));
+
+    await this.db.transaction(
+      'rw',
+      this.db.projects,
+      this.db.entries,
+      this.db.files,
+      async () => {
+        await this.db.projects.put(project);
+        await this.db.entries.bulkPut(entries);
+        await this.db.files.bulkPut(files);
+      },
+    );
+
+    return { project, entries, tree: decoded.tree };
   }
 }
 

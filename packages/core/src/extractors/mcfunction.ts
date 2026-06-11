@@ -1,7 +1,7 @@
 import type { TranslationEntry } from '../types/translation-entry.js';
 import type { VirtualFileTree } from '../types/virtual-file.js';
 import { listFiles, getFileText } from '../types/virtual-file.js';
-import { extractStrings, extractedDisplayText } from '../text-component/index.js';
+import { extractStrings } from '../text-component/index.js';
 import { createEntry } from './base.js';
 
 const FUNCTION_PATTERN = /data\/[^/]+\/(function|functions)\/.+\.mcfunction$/i;
@@ -34,6 +34,20 @@ function extractCommandText(line: string): { payload: string; command: string } 
   return null;
 }
 
+function joinContinuedLines(lines: string[], startIndex: number): {
+  text: string;
+  endIndex: number;
+} {
+  let text = lines[startIndex] ?? '';
+  let endIndex = startIndex;
+
+  while (/\\\s*$/.test(text) && endIndex + 1 < lines.length) {
+    text = text.replace(/\\\s*$/, '') + (lines[++endIndex] ?? '').trimStart();
+  }
+
+  return { text, endIndex };
+}
+
 export function extractMcFunctions(tree: VirtualFileTree, projectId: string): TranslationEntry[] {
   const entries: TranslationEntry[] = [];
 
@@ -42,12 +56,18 @@ export function extractMcFunctions(tree: VirtualFileTree, projectId: string): Tr
     if (!text) continue;
 
     const lines = text.split(/\r?\n/);
-    lines.forEach((line, lineIndex) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) return;
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const logicalLine = joinContinuedLines(lines, lineIndex);
+      const trimmed = logicalLine.text.trim();
+      const sourcePath = logicalLine.endIndex === lineIndex
+        ? `line:${lineIndex + 1}`
+        : `line:${lineIndex + 1}-${logicalLine.endIndex + 1}`;
+      lineIndex = logicalLine.endIndex;
+
+      if (!trimmed || trimmed.startsWith('#')) continue;
 
       const cmd = extractCommandText(trimmed);
-      if (!cmd) return;
+      if (!cmd) continue;
 
       const parsed = tryParseJsonOrSnbt(cmd.payload);
       if (!parsed) {
@@ -57,30 +77,30 @@ export function extractMcFunctions(tree: VirtualFileTree, projectId: string): Tr
               original: cmd.payload,
               sourceFile: file.path,
               sourceType: 'mcfunction',
-              sourcePath: `line:${lineIndex + 1}`,
+              sourcePath,
               context: [cmd.command],
               tags: ['mcfunction', 'raw'],
             }),
           );
         }
-        return;
+        continue;
       }
 
       const extracted = extractStrings(parsed);
-      for (const item of extracted) {
+      if (extracted.length > 0) {
         entries.push(
           createEntry(projectId, {
-            original: extractedDisplayText(item),
+            original: cmd.payload,
             sourceFile: file.path,
             sourceType: 'mcfunction',
-            sourcePath: `line:${lineIndex + 1}${item.path}`,
+            sourcePath,
             context: [cmd.command],
-            references: item.translateKey ? [item.translateKey] : [],
-            tags: ['mcfunction', 'text-component'],
+            references: extracted.flatMap((item) => item.translateKey ? [item.translateKey] : []),
+            tags: ['mcfunction', 'text-component', 'whole-json'],
           }),
         );
       }
-    });
+    }
   }
 
   return entries;

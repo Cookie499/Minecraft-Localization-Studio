@@ -2,6 +2,7 @@ import type { TranslationEntry } from '../types/translation-entry.js';
 import type { VirtualFileTree } from '../types/virtual-file.js';
 import { createDefaultExtractorRegistry } from '../extractors/default-registry.js';
 import type { ExtractorRegistry } from '../extractors/registry.js';
+import type { NbtScanOptions } from '../nbt/traverse.js';
 
 function dedupeEntries(entries: TranslationEntry[]): TranslationEntry[] {
   const map = new Map<string, TranslationEntry>();
@@ -23,6 +24,7 @@ export async function extractAllFromTree(
   projectId: string,
   onProgress?: (p: ExtractProgress) => void,
   registry: ExtractorRegistry = createDefaultExtractorRegistry(),
+  nbtOptions?: NbtScanOptions,
 ): Promise<TranslationEntry[]> {
   const all: TranslationEntry[] = [];
 
@@ -32,7 +34,7 @@ export async function extractAllFromTree(
   for (const extractor of registry.list()) {
     const startedAt = performance.now();
     try {
-      const part = await extractor.extract({ tree, projectId });
+      const part = await extractor.extract({ tree, projectId, nbtOptions });
       const durationMs = Math.round(performance.now() - startedAt);
       for (const entry of part) all.push(entry);
       console.info(

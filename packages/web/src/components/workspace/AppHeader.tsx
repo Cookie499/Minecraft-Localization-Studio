@@ -1,6 +1,7 @@
 import {
   Archive,
   Download,
+  FileUp,
   FolderOpen,
   FolderUp,
   Languages,
@@ -18,6 +19,7 @@ interface AppHeaderProps {
   onFolderInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onZipInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onPickDirectory: () => void;
+  onProjectInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onExportWorkspace: () => void;
   onBuildZip: () => void;
   onLoadExisting: () => void;
@@ -32,6 +34,7 @@ export function AppHeader({
   onFolderInput,
   onZipInput,
   onPickDirectory,
+  onProjectInput,
   onExportWorkspace,
   onBuildZip,
   onLoadExisting,
@@ -78,9 +81,24 @@ export function AppHeader({
 
       <Separator orientation="vertical" className="mx-1 h-5" />
 
+      <label>
+        <Button variant="ghost" size="sm" asChild>
+          <span>
+            <FileUp className="h-3.5 w-3.5" />
+            Import Project
+          </span>
+        </Button>
+        <input
+          type="file"
+          className="hidden"
+          accept=".json,.mlsproject"
+          onChange={onProjectInput}
+        />
+      </label>
+
       <Button variant="ghost" size="sm" disabled={!hasProject} onClick={onExportWorkspace}>
         <Download className="h-3.5 w-3.5" />
-        Export
+        Export Project
       </Button>
 
       <Button variant="secondary" size="sm" disabled={!hasProject} onClick={onBuildZip}>

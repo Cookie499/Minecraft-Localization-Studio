@@ -1,4 +1,5 @@
 import type { VirtualFile, VirtualFileTree } from '../types/virtual-file.js';
+import type { NbtScanOptions } from '../nbt/traverse.js';
 
 export type ScanTargetKind = 'resource-pack' | 'data-pack' | 'save';
 
@@ -35,6 +36,7 @@ export interface LangTranslationPlan {
 export interface ScanSelection {
   targetIds: string[];
   langPlans: LangTranslationPlan[];
+  nbtOptions?: NbtScanOptions;
 }
 
 function normalize(path: string): string {

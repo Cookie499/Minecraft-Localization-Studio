@@ -1,8 +1,8 @@
 import type { TranslationEntry } from '../types/translation-entry.js';
-import { extractStrings, extractedDisplayText } from '../text-component/index.js';
+import { extractStrings } from '../text-component/index.js';
 import { createEntry } from '../extractors/base.js';
 
-const NBT_STRING_FIELD_BLACKLIST = new Set([
+export const DEFAULT_NBT_STRING_FIELD_BLACKLIST = [
   'id',
   'type',
   'Type',
@@ -32,10 +32,18 @@ const NBT_STRING_FIELD_BLACKLIST = new Set([
   'potion',
   'color',
   'Dimension',
-  'SpawnDimension'
-]);
+  'SpawnDimension',
+  'variant',
+  'Casing',
+  'Lock',
+  'Modifier',
+  'Dye',
+  'sherds',
+  'StorageType',
+  'BogeyStyle',
+] as const;
 
-const NBT_CONTAINER_FIELD_BLACKLIST = new Set([
+export const DEFAULT_NBT_CONTAINER_FIELD_BLACKLIST = [
   'properties',
   'palette',
   'palettes',
@@ -53,7 +61,19 @@ const NBT_CONTAINER_FIELD_BLACKLIST = new Set([
   'Data',
   'pattern',
   'block_ticks',
-]);
+  'can_place_on',
+  'can_break',
+] as const;
+
+export interface NbtScanOptions {
+  stringFieldBlacklist: readonly string[];
+  containerFieldBlacklist: readonly string[];
+}
+
+export const DEFAULT_NBT_SCAN_OPTIONS: NbtScanOptions = {
+  stringFieldBlacklist: DEFAULT_NBT_STRING_FIELD_BLACKLIST,
+  containerFieldBlacklist: DEFAULT_NBT_CONTAINER_FIELD_BLACKLIST,
+};
 
 function unwrapNbtValue(node: unknown): unknown {
   if (node === null || node === undefined) return node;
@@ -94,11 +114,12 @@ export function shouldExtractNbtString(
   fieldName: string,
   _path: string,
   value: string,
+  options: NbtScanOptions = DEFAULT_NBT_SCAN_OPTIONS,
 ): boolean {
   const trimmed = value.trim();
   if (trimmed.length === 0) return false;
   if (trimmed.startsWith('/') && !/["']/.test(trimmed)) return false;
-  return !NBT_STRING_FIELD_BLACKLIST.has(normalizedKey(fieldName));
+  return !options.stringFieldBlacklist.includes(normalizedKey(fieldName));
 }
 
 function addTextEntries(
@@ -109,36 +130,45 @@ function addTextEntries(
   projectId: string,
   sourceType: string,
   entries: TranslationEntry[],
+  options: NbtScanOptions,
 ): void {
   const unwrapped = unwrapNbtValue(value);
   if (unwrapped === null || unwrapped === undefined) return;
 
   if (Array.isArray(unwrapped)) {
     unwrapped.forEach((item, index) => {
-      addTextEntries(item, fieldName, `${path}[${index}]`, filePath, projectId, sourceType, entries);
+      addTextEntries(
+        item,
+        fieldName,
+        `${path}[${index}]`,
+        filePath,
+        projectId,
+        sourceType,
+        entries,
+        options,
+      );
     });
     return;
   }
 
   if (typeof unwrapped !== 'string') return;
-  if (!shouldExtractNbtString(fieldName, path, unwrapped)) return;
+  if (!shouldExtractNbtString(fieldName, path, unwrapped, options)) return;
 
   const json = tryParseJsonString(unwrapped);
   if (json.parsed) {
-    for (const item of extractStrings(json.value)) {
-      const original = extractedDisplayText(item);
-      if (!original) continue;
-      entries.push(
-        createEntry(projectId, {
-          original,
-          sourceFile: filePath,
-          sourceType,
-          sourcePath: `${path}${item.path}`,
-          references: item.translateKey ? [item.translateKey] : [],
-          tags: [sourceType, 'nbt', 'text-component'],
-        }),
-      );
-    }
+    const extracted = extractStrings(json.value);
+    if (extracted.length === 0) return;
+
+    entries.push(
+      createEntry(projectId, {
+        original: unwrapped,
+        sourceFile: filePath,
+        sourceType,
+        sourcePath: path,
+        references: extracted.flatMap((item) => item.translateKey ? [item.translateKey] : []),
+        tags: [sourceType, 'nbt', 'text-component', 'whole-json'],
+      }),
+    );
     return;
   }
 
@@ -163,12 +193,22 @@ export function extractFromNbtTree(
   sourceType: string,
   entries: TranslationEntry[],
   fieldName = '',
+  options: NbtScanOptions = DEFAULT_NBT_SCAN_OPTIONS,
 ): void {
   const unwrapped = unwrapNbtValue(node);
 
   if (unwrapped === null || unwrapped === undefined) return;
   if (typeof unwrapped === 'string') {
-    addTextEntries(unwrapped, fieldName, path, filePath, projectId, sourceType, entries);
+    addTextEntries(
+      unwrapped,
+      fieldName,
+      path,
+      filePath,
+      projectId,
+      sourceType,
+      entries,
+      options,
+    );
     return;
   }
 
@@ -182,6 +222,7 @@ export function extractFromNbtTree(
         sourceType,
         entries,
         fieldName,
+        options,
       );
     });
     return;
@@ -193,11 +234,20 @@ export function extractFromNbtTree(
       const childPath = path ? `${path}.${key}` : key;
       const keyName = normalizedKey(key);
 
-      if (NBT_CONTAINER_FIELD_BLACKLIST.has(keyName)) {
+      if (options.containerFieldBlacklist.includes(keyName)) {
         continue;
       }
 
-      extractFromNbtTree(child, childPath, filePath, projectId, sourceType, entries, key);
+      extractFromNbtTree(
+        child,
+        childPath,
+        filePath,
+        projectId,
+        sourceType,
+        entries,
+        key,
+        options,
+      );
     }
   }
 }

@@ -1,9 +1,11 @@
 import type { TranslationEntry } from '../types/translation-entry.js';
 import type { VirtualFileTree } from '../types/virtual-file.js';
+import type { NbtScanOptions } from '../nbt/traverse.js';
 
 export interface ExtractorContext {
   tree: VirtualFileTree;
   projectId: string;
+  nbtOptions?: NbtScanOptions;
 }
 
 export interface Extractor {

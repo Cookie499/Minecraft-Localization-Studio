@@ -1,5 +1,16 @@
+import { useState } from 'react';
 import type { TranslationEntry } from '@mls/core';
+import {
+  ArrowDownToLine,
+  Check,
+  Copy,
+  Languages,
+  Loader2,
+  Settings,
+  Sparkles,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
@@ -9,6 +20,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { TranslationSettingsDialog } from './TranslationSettingsDialog';
+import {
+  loadTranslationSettings,
+  saveTranslationSettings,
+  translateWithDeepSeek,
+  translateWithFreeService,
+  type TranslationSettings,
+} from '@/lib/translation-service';
+import { visualizeControlCharacters } from '@/lib/utils';
 
 const STATUS_OPTIONS: TranslationEntry['status'][] = [
   'untranslated',
@@ -28,6 +48,45 @@ export function TranslationDetailsPanel({
   onTranslationChange,
   onStatusChange,
 }: TranslationDetailsPanelProps) {
+  const [settings, setSettings] = useState<TranslationSettings>(
+    loadTranslationSettings,
+  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [busyAction, setBusyAction] = useState<'free' | 'ai' | null>(null);
+  const [message, setMessage] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const copySource = async () => {
+    if (!entry) return;
+    try {
+      await navigator.clipboard.writeText(entry.original);
+      setCopied(true);
+      setMessage('Source copied');
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setMessage('Clipboard access was denied');
+    }
+  };
+
+  const runTranslation = async (provider: 'free' | 'ai') => {
+    if (!entry) return;
+    setBusyAction(provider);
+    setMessage('');
+    try {
+      const translated = provider === 'free'
+        ? await translateWithFreeService(entry.original, settings)
+        : await translateWithDeepSeek(entry, settings);
+      onTranslationChange(translated);
+      setMessage(provider === 'free'
+        ? 'Free translation applied'
+        : 'DeepSeek translation applied');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Translation failed');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col bg-sidebar">
       <div className="flex h-9 shrink-0 items-center border-b border-sidebar-border px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -49,8 +108,65 @@ export function TranslationDetailsPanel({
                 <Badge variant={entry.status}>{entry.status}</Badge>
               </div>
               <p className="rounded-sm border border-border bg-panel p-2.5 text-sm leading-relaxed">
-                {entry.original}
+                {visualizeControlCharacters(entry.original)}
               </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void copySource()}
+                  title="Copy source text"
+                >
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  Copy
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    onTranslationChange(entry.original);
+                    setMessage('Source text filled into translation');
+                  }}
+                  title="Fill the source text into Translation"
+                >
+                  <ArrowDownToLine className="h-3.5 w-3.5" />
+                  Fill source
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busyAction !== null}
+                  onClick={() => void runTranslation('free')}
+                  title="Translate with the free translation service"
+                >
+                  {busyAction === 'free'
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <Languages className="h-3.5 w-3.5" />}
+                  Translate
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={busyAction !== null}
+                  onClick={() => void runTranslation('ai')}
+                  title="Translate with DeepSeek"
+                >
+                  {busyAction === 'ai'
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <Sparkles className="h-3.5 w-3.5" />}
+                  AI translate
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSettingsOpen(true)}
+                  title="AI translation settings"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              {message && (
+                <p className="mt-1.5 text-[11px] text-muted-foreground">{message}</p>
+              )}
             </section>
 
             <section>
@@ -114,6 +230,17 @@ export function TranslationDetailsPanel({
           </div>
         </ScrollArea>
       )}
+
+      <TranslationSettingsDialog
+        open={settingsOpen}
+        settings={settings}
+        onClose={() => setSettingsOpen(false)}
+        onSave={(nextSettings) => {
+          setSettings(nextSettings);
+          saveTranslationSettings(nextSettings);
+          setMessage('Translation settings saved');
+        }}
+      />
     </div>
   );
 }
