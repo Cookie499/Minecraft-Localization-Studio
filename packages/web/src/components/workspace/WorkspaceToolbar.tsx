@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import type { TranslationEntry } from '@mls/core';
-import { Ban, CheckCheck, LocateFixed, Search, X } from 'lucide-react';
+import {
+  Ban,
+  CheckCheck,
+  LocateFixed,
+  Search,
+  Sparkles,
+  Square,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -26,6 +34,10 @@ interface WorkspaceToolbarProps {
   onLocateSelected: () => void;
   onClearSelection: () => void;
   onApplyBatchTranslation: (translation: string) => void;
+  onAiTranslateSelected: () => void;
+  onStopAiTranslation: () => void;
+  aiTranslationBusy: boolean;
+  aiTranslationMessage: string;
 }
 
 export function WorkspaceToolbar({
@@ -42,6 +54,10 @@ export function WorkspaceToolbar({
   onLocateSelected,
   onClearSelection,
   onApplyBatchTranslation,
+  onAiTranslateSelected,
+  onStopAiTranslation,
+  aiTranslationBusy,
+  aiTranslationMessage,
 }: WorkspaceToolbarProps) {
   const counts = countByStatus(entries);
   const [batchTranslation, setBatchTranslation] = useState('');
@@ -129,6 +145,20 @@ export function WorkspaceToolbar({
           Apply to {selectedCount}
         </Button>
         <Button
+          size="sm"
+          variant={aiTranslationBusy ? 'secondary' : 'default'}
+          disabled={!aiTranslationBusy && selectedCount === 0}
+          onClick={aiTranslationBusy ? onStopAiTranslation : onAiTranslateSelected}
+          title={aiTranslationBusy
+            ? 'Stop batch AI translation'
+            : 'Translate every selected entry with DeepSeek'}
+        >
+          {aiTranslationBusy
+            ? <Square className="h-3.5 w-3.5" />
+            : <Sparkles className="h-3.5 w-3.5" />}
+          {aiTranslationBusy ? `Stop (${aiTranslationMessage})` : `AI translate ${selectedCount}`}
+        </Button>
+        <Button
           variant="ghost"
           size="icon"
           disabled={selectedCount === 0}
@@ -138,6 +168,9 @@ export function WorkspaceToolbar({
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>
+      {!aiTranslationBusy && aiTranslationMessage && (
+        <p className="mt-1 text-[11px] text-muted-foreground">{aiTranslationMessage}</p>
+      )}
     </div>
   );
 }

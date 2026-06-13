@@ -17,7 +17,6 @@ import {
 import { ScanSelectionPanel } from '@/components/scan/ScanSelectionPanel';
 import { AppHeader } from '@/components/workspace/AppHeader';
 import { TranslationWorkspace } from '@/components/workspace/TranslationWorkspace';
-import { useDebouncedCallback } from '@/hooks/useDebounce';
 import { importAndExtract, importFromDirectoryPicker, importFromFileList } from '@/lib/import-project';
 
 interface PendingImport {
@@ -35,6 +34,8 @@ export default function App() {
   const [progress, setProgress] = useState('');
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const fileTreeRef = useRef<VirtualFileTree | null>(null);
+  const entriesRef = useRef<TranslationEntry[]>([]);
+  const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const store = useMemo(() => new WorkspaceStore(), []);
   const selectedEntry = useMemo(
@@ -42,38 +43,55 @@ export default function App() {
     [entries, selectedId],
   );
 
-  const persistEntry = useDebouncedCallback(async (entry: TranslationEntry) => {
-    await store.saveEntry(entry);
-  }, 400);
+  const replaceEntries = useCallback((next: TranslationEntry[]) => {
+    entriesRef.current = next;
+    setEntries(next);
+  }, []);
+
+  const persistEntries = useCallback(
+    (changedEntries: TranslationEntry[]) => {
+      if (changedEntries.length === 0) return Promise.resolve();
+
+      const queued = persistenceQueueRef.current
+        .catch(() => undefined)
+        .then(() => store.saveEntries(changedEntries))
+        .catch((error) => {
+          console.error('[MLS][workspace] Failed to persist translation entries', error);
+        });
+      persistenceQueueRef.current = queued;
+      return queued;
+    },
+    [store],
+  );
 
   const updateEntry = useCallback(
-    (id: string, patch: Partial<TranslationEntry>) => {
-      setEntries((previous) => {
-        const next = previous.map((entry) => entry.id === id ? { ...entry, ...patch } : entry);
-        const updated = next.find((entry) => entry.id === id);
-        if (updated) void persistEntry(updated);
-        return next;
-      });
+    async (id: string, patch: Partial<TranslationEntry>) => {
+      const index = entriesRef.current.findIndex((entry) => entry.id === id);
+      if (index < 0) return;
+
+      const updated = { ...entriesRef.current[index]!, ...patch };
+      const next = [...entriesRef.current];
+      next[index] = updated;
+      replaceEntries(next);
+      await persistEntries([updated]);
     },
-    [persistEntry],
+    [persistEntries, replaceEntries],
   );
 
   const updateEntries = useCallback(
-    (ids: string[], patch: Partial<TranslationEntry>) => {
+    async (ids: string[], patch: Partial<TranslationEntry>) => {
       const idSet = new Set(ids);
-      setEntries((previous) => {
-        const updated: TranslationEntry[] = [];
-        const next = previous.map((entry) => {
-          if (!idSet.has(entry.id)) return entry;
-          const nextEntry = { ...entry, ...patch };
-          updated.push(nextEntry);
-          return nextEntry;
-        });
-        void Promise.all(updated.map((entry) => store.saveEntry(entry)));
-        return next;
+      const updated: TranslationEntry[] = [];
+      const next = entriesRef.current.map((entry) => {
+        if (!idSet.has(entry.id)) return entry;
+        const nextEntry = { ...entry, ...patch };
+        updated.push(nextEntry);
+        return nextEntry;
       });
+      replaceEntries(next);
+      await persistEntries(updated);
     },
-    [store],
+    [persistEntries, replaceEntries],
   );
 
   const prepareImport = (tree: VirtualFileTree, name: string) => {
@@ -117,7 +135,7 @@ export default function App() {
       );
       setProjectId(id);
       setProjectName(name);
-      setEntries(extracted);
+      replaceEntries(extracted);
       setSelectedId(extracted[0]?.id ?? null);
       setProgress(`Done: ${extracted.length} entries`);
     } finally {
@@ -152,6 +170,7 @@ export default function App() {
     setLoading(true);
     setProgress('Packing complete project...');
     try {
+      await persistenceQueueRef.current;
       const workspace = await store.exportCompleteProject(projectId);
       downloadJson(workspace, `${projectName || 'workspace'}.mlsproject`);
       setProgress('Project export complete');
@@ -174,7 +193,7 @@ export default function App() {
       setPendingImport(null);
       setProjectId(imported.project.id);
       setProjectName(imported.project.name);
-      setEntries(imported.entries);
+      replaceEntries(imported.entries);
       setSelectedId(imported.entries[0]?.id ?? null);
       setProgress(
         `Imported ${imported.entries.length} entries and ${imported.tree.length} files`,
@@ -208,6 +227,7 @@ export default function App() {
   };
 
   const onLoadExisting = async () => {
+    await persistenceQueueRef.current;
     const projects = await store.listProjects();
     if (!projects.length) {
       alert('No saved projects');
@@ -219,7 +239,7 @@ export default function App() {
     fileTreeRef.current = tree.length > 0 ? tree : null;
     setProjectId(latest.id);
     setProjectName(latest.name);
-    setEntries(loaded);
+    replaceEntries(loaded);
     setSelectedId(loaded[0]?.id ?? null);
   };
 
@@ -263,18 +283,25 @@ export default function App() {
           onSelectEntry={(entry) => setSelectedId(entry.id)}
           onTranslationChange={(translation) => {
             if (!selectedEntry) return;
-            updateEntry(selectedEntry.id, {
+            void updateEntry(selectedEntry.id, {
               translation,
               status: translation ? 'translated' : 'untranslated',
             });
           }}
           onStatusChange={(status) => {
-            if (selectedEntry) updateEntry(selectedEntry.id, { status });
+            if (selectedEntry) void updateEntry(selectedEntry.id, { status });
           }}
           onBatchTranslationChange={(ids, translation) => {
-            updateEntries(ids, {
+            return updateEntries(ids, {
               translation,
               status: translation ? 'translated' : 'untranslated',
+            });
+          }}
+          onAiTranslationChange={(id, translation) => {
+            return updateEntry(id, {
+              translation,
+              status: translation ? 'translated' : 'untranslated',
+              aiGenerated: true,
             });
           }}
         />

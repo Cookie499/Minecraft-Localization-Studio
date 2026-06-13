@@ -82,6 +82,7 @@ export function TranslationEntryTable({
 }: TranslationEntryTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const parentRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
 
   const table = useReactTable({
     data: entries,
@@ -99,6 +100,7 @@ export function TranslationEntryTable({
     getScrollElement: () => parentRef.current,
     estimateSize: () => 40,
     overscan: 12,
+    paddingEnd: 100,
   });
 
   const virtualRows = virtualizer.getVirtualItems();
@@ -131,9 +133,10 @@ export function TranslationEntryTable({
   };
 
   return (
-    <div className="flex h-full flex-col bg-panel">
+    <div className="flex h-full select-none flex-col bg-panel">
       <div
-        className="grid shrink-0 border-b border-border bg-panel-header text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+        ref={headerRef}
+        className="grid shrink-0 overflow-hidden border-b border-border bg-panel-header text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
         style={{ gridTemplateColumns: gridTemplate }}
       >
         <label className="flex h-8 items-center justify-center border-r border-border">
@@ -160,7 +163,15 @@ export function TranslationEntryTable({
         )}
       </div>
 
-      <div ref={parentRef} className="min-h-0 flex-1 overflow-auto">
+      <div
+        ref={parentRef}
+        className="min-h-0 flex-1 overflow-auto"
+        onScroll={(event) => {
+          if (headerRef.current) {
+            headerRef.current.scrollLeft = event.currentTarget.scrollLeft;
+          }
+        }}
+      >
         {rows.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             No entries match the current filters.

@@ -2,6 +2,25 @@ import type { TranslationEntry } from '@mls/core';
 
 const SETTINGS_KEY = 'mls.translation-settings.v1';
 
+const STRUCTURE_PRESERVATION_PROMPT = [
+  'Mandatory output integrity rules:',
+  '- Return the complete input. Never omit, summarize, shorten, reorder, or reconstruct any part.',
+  '- Change only human-readable natural-language text that needs translation.',
+  '- Preserve every command token, selector, score/objective name, number, coordinate, namespace ID, JSON/SNBT key, punctuation mark, quote, escape, formatting code, bullet, and whitespace unless it is inside the translated human-readable text.',
+  '- If the complete input is enclosed in ASCII double quotes ("..."), the quotes are syntax only: preserve the exact outer ASCII quotes, but translate all natural-language content inside them. Do not copy the inner source-language text unchanged.',
+  '- For Minecraft text components, translate only player-visible string values such as the value of "text". Keep keys, colors, events, selectors, and component structure exactly unchanged.',
+  '- If a segment should not be translated, copy it exactly. Mixed translated and untranslated content must remain present.',
+  '- The output must remain valid in the same format as the input and must contain no explanation or Markdown fence.',
+].join('\n');
+
+const MCFUNCTION_PRESERVATION_PROMPT = [
+  'Minecraft command example:',
+  'Input: score $theatreAct count matches 3 if block -121 61 31 minecraft:air run tellraw @a [{"text":"• "},{"color":"gold","text":"Position 4 "},{"color":"red","text":"Incorrect"}]',
+  'Correct output: score $theatreAct count matches 3 if block -121 61 31 minecraft:air run tellraw @a [{"text":"• "},{"color":"gold","text":"位置 4 "},{"color":"red","text":"不正确"}]',
+  'Incorrect output: tellraw @a [{"text":"• "},{"color":"gold","text":"位置 4 "},{"color":"red","text":"不正确"}]',
+  'The incorrect output is forbidden because it drops the execute-condition prefix.',
+].join('\n');
+
 export interface GlossaryEntry {
   source: string;
   translation: string;
@@ -23,9 +42,9 @@ export const DEFAULT_TRANSLATION_SETTINGS: TranslationSettings = {
   deepSeekModel: 'deepseek-v4-flash',
   prompt: [
     'Translate Minecraft localization text from {{sourceLanguage}} to {{targetLanguage}}.',
-    'Preserve placeholders, formatting codes, commands, JSON syntax, and proper nouns.',
+    'Translate only player-visible natural-language text.',
     'Use terminology natural to Simplified Chinese Minecraft players.',
-    'Return only the translated text without quotes or explanation.',
+    'Return the complete translated input without adding wrapping quotes or explanation.',
   ].join('\n'),
   glossary: [
     { source: 'Advancement', translation: '进度' },
@@ -62,7 +81,7 @@ export function saveTranslationSettings(settings: TranslationSettings): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
-function cleanTranslation(value: string): string {
+export function cleanTranslation(value: string): string {
   const trimmed = value.trim();
   const fenced = trimmed.match(/^```(?:\w+)?\s*([\s\S]*?)\s*```$/);
   const result = fenced?.[1]?.trim() ?? trimmed;
@@ -106,13 +125,22 @@ export async function translateWithFreeService(
   return cleanTranslation(translated);
 }
 
-function renderPrompt(settings: TranslationSettings, entry: TranslationEntry): string {
-  return settings.prompt
+export function buildDeepSeekSystemPrompt(
+  settings: TranslationSettings,
+  entry: TranslationEntry,
+): string {
+  const customPrompt = settings.prompt
     .replaceAll('{{source}}', entry.original)
     .replaceAll('{{sourceLanguage}}', settings.sourceLanguage)
     .replaceAll('{{targetLanguage}}', settings.targetLanguage)
     .replaceAll('{{sourceType}}', entry.sourceType)
     .replaceAll('{{context}}', entry.context.join(', '));
+
+  return [
+    customPrompt,
+    STRUCTURE_PRESERVATION_PROMPT,
+    entry.sourceType === 'mcfunction' ? MCFUNCTION_PRESERVATION_PROMPT : '',
+  ].filter(Boolean).join('\n\n');
 }
 
 export function findGlossaryMatches(
@@ -140,11 +168,37 @@ export function buildDeepSeekUserContent(
   entry: TranslationEntry,
   settings: TranslationSettings,
 ): string {
-  const glossaryMatches = findGlossaryMatches(entry.original, settings.glossary);
+  let quotedStringContent: string | null = null;
+  if (entry.original.startsWith('"') && entry.original.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(entry.original) as unknown;
+      if (typeof parsed === 'string') quotedStringContent = parsed;
+    } catch {
+      quotedStringContent = entry.original.slice(1, -1);
+    }
+  }
+  const sourceForTranslation = quotedStringContent ?? entry.original;
+  const glossaryMatches = findGlossaryMatches(sourceForTranslation, settings.glossary);
   const parts = [
     `Source type: ${entry.sourceType}`,
     `Context: ${entry.context.join(', ') || '(none)'}`,
+    quotedStringContent === null
+      ? 'Output contract: Return the entire source below with only translatable human-readable text changed.'
+      : 'Output contract: Translate the complete plain-text source below. Return only the translated text, without wrapping quotes or explanation.',
   ];
+
+  if (quotedStringContent !== null) {
+    parts.push(
+      'The original value was a JSON string. Its outer quotes have already been removed.',
+      'Translate all source-language natural language below. Do not copy the English sentence unchanged.',
+    );
+    if (quotedStringContent?.trim()) {
+      parts.push(
+        `TEXT THAT MUST BE TRANSLATED: ${quotedStringContent}`,
+        'Do not leave the text above in the source language.',
+      );
+    }
+  }
 
   if (glossaryMatches.length > 0) {
     parts.push(
@@ -155,22 +209,39 @@ export function buildDeepSeekUserContent(
     );
   }
 
-  parts.push('Text to translate:', entry.original);
+  parts.push(
+    'BEGIN COMPLETE SOURCE',
+    sourceForTranslation,
+    'END COMPLETE SOURCE',
+  );
   return parts.join('\n');
 }
 
 export async function translateWithDeepSeek(
   entry: TranslationEntry,
   settings: TranslationSettings,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (!settings.deepSeekApiKey.trim()) {
     throw new Error('Configure a DeepSeek API key first');
+  }
+  let promptEntry = entry;
+  if (entry.original.startsWith('"') && entry.original.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(entry.original) as unknown;
+      if (typeof parsed === 'string') {
+        promptEntry = { ...entry, original: parsed };
+      }
+    } catch {
+      promptEntry = { ...entry, original: entry.original.slice(1, -1) };
+    }
   }
 
   let response: Response;
   try {
     response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
+      signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${settings.deepSeekApiKey.trim()}`,
@@ -178,7 +249,7 @@ export async function translateWithDeepSeek(
       body: JSON.stringify({
         model: settings.deepSeekModel,
         messages: [
-          { role: 'system', content: renderPrompt(settings, entry) },
+          { role: 'system', content: buildDeepSeekSystemPrompt(settings, promptEntry) },
           {
             role: 'user',
             content: buildDeepSeekUserContent(entry, settings),
@@ -188,7 +259,8 @@ export async function translateWithDeepSeek(
         thinking: { type: 'disabled' },
       }),
     });
-  } catch {
+  } catch (error) {
+    if (signal?.aborted) throw error;
     throw new Error('DeepSeek was blocked by the network or browser CORS policy');
   }
 

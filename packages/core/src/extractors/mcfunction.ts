@@ -3,6 +3,7 @@ import type { VirtualFileTree } from '../types/virtual-file.js';
 import { listFiles, getFileText } from '../types/virtual-file.js';
 import { extractStrings } from '../text-component/index.js';
 import { createEntry } from './base.js';
+import { scanItemTextComponents } from './mcfunction-item-components.js';
 
 const FUNCTION_PATTERN = /data\/[^/]+\/(function|functions)\/.+\.mcfunction$/i;
 
@@ -27,7 +28,8 @@ function extractCommandText(line: string): { payload: string; command: string } 
   for (const pattern of COMMAND_PATTERNS) {
     const match = line.match(pattern);
     if (match) {
-      const payload = line.slice(match[0].length).trim();
+      const payloadStart = (match.index ?? 0) + match[0].length;
+      const payload = line.slice(payloadStart).trim();
       return { payload, command: match[0].trim().split(/\s+/)[0] ?? 'command' };
     }
   }
@@ -65,6 +67,23 @@ export function extractMcFunctions(tree: VirtualFileTree, projectId: string): Tr
       lineIndex = logicalLine.endIndex;
 
       if (!trimmed || trimmed.startsWith('#')) continue;
+
+      const itemComponents = scanItemTextComponents(trimmed);
+      for (const component of itemComponents) {
+        const parsed = tryParseJsonOrSnbt(component.payload);
+        if (!parsed || extractStrings(parsed).length === 0) continue;
+        entries.push(
+          createEntry(projectId, {
+            original: component.payload,
+            sourceFile: file.path,
+            sourceType: 'mcfunction',
+            sourcePath: `${sourcePath}/${component.path}`,
+            context: ['item', component.path],
+            tags: ['mcfunction', 'item-component', 'text-component', 'whole-json'],
+          }),
+        );
+      }
+      if (itemComponents.length > 0) continue;
 
       const cmd = extractCommandText(trimmed);
       if (!cmd) continue;

@@ -1,5 +1,10 @@
 import nbt from 'prismarine-nbt';
 import { ungzip } from 'pako';
+import {
+  assertNbtStringsWellFormed,
+  modifiedUtf8NbtToStandard,
+  standardUtf8NbtToModified,
+} from './modified-utf8.js';
 
 export interface NbtValue {
   type: string;
@@ -11,14 +16,15 @@ export async function parseNbt(buffer: Uint8Array): Promise<NbtValue> {
   const bytes = buffer[0] === 0x1f && buffer[1] === 0x8b
     ? ungzip(buffer)
     : buffer;
-  const data = Uint8Array.from(bytes).buffer;
+  const data = modifiedUtf8NbtToStandard(Uint8Array.from(bytes)).buffer;
   const { parsed } = await nbt.parse(data, 'big');
   return parsed as NbtValue;
 }
 
 export async function serializeNbt(root: NbtValue): Promise<Uint8Array> {
+  assertNbtStringsWellFormed(root);
   const encoded = await nbt.writeUncompressed(root as never);
-  return new Uint8Array(encoded);
+  return standardUtf8NbtToModified(new Uint8Array(encoded));
 }
 
 export function getCompoundValue(node: NbtValue | unknown): Record<string, unknown> | null {

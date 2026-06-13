@@ -136,6 +136,36 @@ function addTextEntries(
   if (unwrapped === null || unwrapped === undefined) return;
 
   if (Array.isArray(unwrapped)) {
+    if (normalizedKey(fieldName) === 'messages') {
+      const decoded = unwrapped.map((item) => {
+        if (typeof item !== 'string') return null;
+        const json = tryParseJsonString(item);
+        return json.parsed && typeof json.value === 'string' ? json.value : null;
+      });
+      if (decoded.every((item) => item !== null)) {
+        const nonEmpty = decoded.flatMap((item, index) =>
+          item && item.trim().length > 0 ? [{ index, text: item }] : []);
+        if (nonEmpty.length > 0) {
+          entries.push(
+            createEntry(projectId, {
+              original: nonEmpty.map((item) => item.text).join('\n'),
+              sourceFile: filePath,
+              sourceType,
+              sourcePath: path,
+              context: [`sign messages: ${nonEmpty.length} non-empty line(s)`],
+              tags: [
+                sourceType,
+                'nbt',
+                'json-string-list',
+                `json-string-list-indices:${nonEmpty.map((item) => item.index).join(',')}`,
+              ],
+            }),
+          );
+        }
+        return;
+      }
+    }
+
     unwrapped.forEach((item, index) => {
       addTextEntries(
         item,
@@ -156,6 +186,20 @@ function addTextEntries(
 
   const json = tryParseJsonString(unwrapped);
   if (json.parsed) {
+    if (typeof json.value === 'string') {
+      if (!shouldExtractNbtString(fieldName, path, json.value, options)) return;
+      entries.push(
+        createEntry(projectId, {
+          original: json.value,
+          sourceFile: filePath,
+          sourceType,
+          sourcePath: path,
+          tags: [sourceType, 'nbt', 'json-string'],
+        }),
+      );
+      return;
+    }
+
     const extracted = extractStrings(json.value);
     if (extracted.length === 0) return;
 
@@ -213,6 +257,20 @@ export function extractFromNbtTree(
   }
 
   if (Array.isArray(unwrapped)) {
+    if (normalizedKey(fieldName) === 'messages') {
+      addTextEntries(
+        unwrapped,
+        fieldName,
+        path,
+        filePath,
+        projectId,
+        sourceType,
+        entries,
+        options,
+      );
+      return;
+    }
+
     unwrapped.forEach((item, i) => {
       extractFromNbtTree(
         item,

@@ -80,6 +80,30 @@ function findStringTag(root: NbtValue, path: string): {
     : null;
 }
 
+function findStringList(root: NbtValue, path: string): string[] | null {
+  const segments = pathSegments(path);
+  let current: unknown = root;
+
+  for (const segment of segments) {
+    const typed = typedValue(current);
+    if (typed?.type === 'compound') {
+      current = (typed.value as Record<string, unknown>)[segment];
+    } else if (current && typeof current === 'object') {
+      current = (current as Record<string, unknown>)[segment];
+    } else {
+      return null;
+    }
+    if (current === undefined) return null;
+  }
+
+  const tag = typedValue(current);
+  if (tag?.type !== 'list') return null;
+  const list = tag.value as { type: string; value: unknown[] };
+  return list.type === 'string' && Array.isArray(list.value)
+    ? list.value as string[]
+    : null;
+}
+
 export function applyNbtTranslations(
   root: NbtValue,
   entries: TranslationEntry[],
@@ -93,8 +117,34 @@ export function applyNbtTranslations(
     const sourcePath = pathPrefix
       ? entry.sourcePath.slice(pathPrefix.length).replace(/^\./, '')
       : entry.sourcePath;
+
+    if (entry.tags.includes('json-string-list')) {
+      const list = findStringList(root, sourcePath);
+      const indexTag = entry.tags.find((tag) =>
+        tag.startsWith('json-string-list-indices:'));
+      if (!list || !indexTag) continue;
+      const indices = indexTag
+        .slice('json-string-list-indices:'.length)
+        .split(',')
+        .map(Number)
+        .filter((index) => Number.isInteger(index) && index >= 0 && index < list.length);
+      const translatedLines = entry.translation.split(/\r?\n/);
+      indices.forEach((listIndex, translationIndex) => {
+        const translated = translatedLines[translationIndex];
+        if (translated !== undefined) list[listIndex] = JSON.stringify(translated);
+      });
+      applied++;
+      continue;
+    }
+
     const target = findStringTag(root, sourcePath);
     if (!target) continue;
+
+    if (entry.tags.includes('json-string')) {
+      target.set(JSON.stringify(entry.translation));
+      applied++;
+      continue;
+    }
 
     if (!target.componentPath) {
       target.set(entry.translation);

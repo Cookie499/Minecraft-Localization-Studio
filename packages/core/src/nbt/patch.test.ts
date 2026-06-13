@@ -20,6 +20,13 @@ async function rootWithText() {
           value: ['{"text":"Page"}'],
         },
       },
+      messages: {
+        type: 'list',
+        value: {
+          type: 'string',
+          value: ['"First line"', '""', '"Third line"', '""'],
+        },
+      },
     },
   }));
   return parseNbt(bytes);
@@ -74,5 +81,31 @@ describe('applyNbtTranslations', () => {
       value: { value: string[] };
     }>).pages!;
     expect(JSON.parse(pages.value.value[0]!)).toEqual({ text: 'Translated page' });
+  });
+
+  it('writes one multiline sign entry back to its original line positions', async () => {
+    const root = await rootWithText();
+    const entry = createEntry('project', {
+      original: 'First line\nThird line',
+      sourceFile: 'level.dat',
+      sourceType: 'level.dat',
+      sourcePath: 'messages',
+      tags: [
+        'level.dat',
+        'nbt',
+        'json-string-list',
+        'json-string-list-indices:0,2',
+      ],
+    });
+    entry.translation = '第一行\n第三行';
+
+    expect(applyNbtTranslations(root, [entry])).toBe(1);
+    const messages = (root.value as Record<string, {
+      value: { value: string[] };
+    }>).messages!;
+    expect(messages.value.value[0]).toBe('"第一行"');
+    expect(messages.value.value[1]).toBe('""');
+    expect(messages.value.value[2]).toBe('"第三行"');
+    expect(messages.value.value[3]).toBe('""');
   });
 });

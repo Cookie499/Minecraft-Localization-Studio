@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TranslationEntry } from '@mls/core';
 import {
   ResizableHandle,
@@ -12,11 +12,17 @@ import {
   saveEntryBlacklist,
 } from '@/lib/entry-blacklist';
 import type { ExplorerSelection } from '@/lib/explorer-tree';
+import {
+  loadTranslationSettings,
+  translateWithDeepSeek,
+} from '@/lib/translation-service';
 import { EntryBlacklistDialog } from './EntryBlacklistDialog';
 import { ProjectExplorer } from './ProjectExplorer';
 import { TranslationDetailsPanel } from './TranslationDetailsPanel';
 import { TranslationEntryTable } from './TranslationEntryTable';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
+
+const AI_TRANSLATION_CONCURRENCY = 3;
 
 interface TranslationWorkspaceProps {
   projectName: string;
@@ -25,7 +31,8 @@ interface TranslationWorkspaceProps {
   onSelectEntry: (entry: TranslationEntry) => void;
   onTranslationChange: (translation: string) => void;
   onStatusChange: (status: TranslationEntry['status']) => void;
-  onBatchTranslationChange: (ids: string[], translation: string) => void;
+  onBatchTranslationChange: (ids: string[], translation: string) => Promise<void>;
+  onAiTranslationChange: (id: string, translation: string) => Promise<void>;
 }
 
 export function TranslationWorkspace({
@@ -36,6 +43,7 @@ export function TranslationWorkspace({
   onTranslationChange,
   onStatusChange,
   onBatchTranslationChange,
+  onAiTranslationChange,
 }: TranslationWorkspaceProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -43,6 +51,9 @@ export function TranslationWorkspace({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [blacklist, setBlacklist] = useState<string[]>(loadEntryBlacklist);
   const [blacklistOpen, setBlacklistOpen] = useState(false);
+  const [batchAiBusy, setBatchAiBusy] = useState(false);
+  const [batchAiMessage, setBatchAiMessage] = useState('');
+  const batchAiControllerRef = useRef<AbortController | null>(null);
 
   const visibleEntries = useMemo(
     () => entries.filter((entry) => !isEntryBlacklisted(entry, blacklist)),
@@ -71,6 +82,10 @@ export function TranslationWorkspace({
     });
   }, [visibleEntries]);
 
+  useEffect(() => () => {
+    batchAiControllerRef.current?.abort();
+  }, []);
+
   const selectSameOriginal = () => {
     if (!selectedEntry) return;
     setSelectedIds(new Set(
@@ -89,6 +104,68 @@ export function TranslationWorkspace({
     setStatusFilter('all');
     setExplorerSelection({ kind: 'all' });
     onSelectEntry(nextEntry);
+  };
+
+  const aiTranslateSelected = async () => {
+    if (batchAiBusy || selectedIds.size === 0) return;
+
+    const selectedEntries = entries.filter((entry) => selectedIds.has(entry.id));
+    const settings = loadTranslationSettings();
+    if (!settings.deepSeekApiKey.trim()) {
+      setBatchAiMessage('Configure a DeepSeek API key in AI translation settings first');
+      return;
+    }
+
+    setBatchAiBusy(true);
+    setBatchAiMessage(`0 / ${selectedEntries.length}`);
+    const controller = new AbortController();
+    batchAiControllerRef.current = controller;
+    let succeeded = 0;
+    const failures: string[] = [];
+    let nextIndex = 0;
+    let completed = 0;
+
+    const translateNext = async () => {
+      while (!controller.signal.aborted && nextIndex < selectedEntries.length) {
+        const entry = selectedEntries[nextIndex]!;
+        nextIndex += 1;
+        try {
+          const translation = await translateWithDeepSeek(entry, settings, controller.signal);
+          if (controller.signal.aborted) break;
+          await onAiTranslationChange(entry.id, translation);
+          succeeded += 1;
+        } catch (error) {
+          if (controller.signal.aborted) break;
+          failures.push(error instanceof Error ? error.message : 'Translation failed');
+        } finally {
+          completed += 1;
+          setBatchAiMessage(`${completed} / ${selectedEntries.length}`);
+        }
+      }
+    };
+
+    await Promise.all(
+      Array.from(
+        { length: Math.min(AI_TRANSLATION_CONCURRENCY, selectedEntries.length) },
+        () => translateNext(),
+      ),
+    );
+
+    const cancelled = controller.signal.aborted;
+    batchAiControllerRef.current = null;
+    setBatchAiBusy(false);
+    if (cancelled) {
+      setBatchAiMessage(
+        `Stopped after ${completed} / ${selectedEntries.length}; ${succeeded} translated`,
+      );
+    } else if (failures.length === 0) {
+      setBatchAiMessage(`AI translated ${succeeded} selected entries`);
+    } else {
+      const firstError = failures[0]!;
+      setBatchAiMessage(
+        `AI translated ${succeeded}; ${failures.length} failed. ${firstError}`,
+      );
+    }
   };
 
   return (
@@ -121,8 +198,12 @@ export function TranslationWorkspace({
               onLocateSelected={locateNextSelected}
               onClearSelection={() => setSelectedIds(new Set())}
               onApplyBatchTranslation={(translation) => {
-                onBatchTranslationChange(Array.from(selectedIds), translation);
+                void onBatchTranslationChange(Array.from(selectedIds), translation);
               }}
+              onAiTranslateSelected={() => void aiTranslateSelected()}
+              onStopAiTranslation={() => batchAiControllerRef.current?.abort()}
+              aiTranslationBusy={batchAiBusy}
+              aiTranslationMessage={batchAiMessage}
             />
             <TranslationEntryTable
               entries={filteredEntries}

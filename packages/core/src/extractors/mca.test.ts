@@ -4,6 +4,7 @@ import { deflate } from 'pako';
 import type { VirtualFileTree } from '../types/virtual-file.js';
 import { findMcaFiles } from './mca.js';
 import { extractFromMcaFile, patchMcaFile } from '../mca/parse.js';
+import { serializeNbt } from '../nbt/parse.js';
 
 function makeMca(): Uint8Array {
   const nbtBytes = new Uint8Array(nbt.writeUncompressed({
@@ -23,6 +24,33 @@ function makeMca(): Uint8Array {
   const view = new DataView(data.buffer);
   view.setUint32(0, (2 << 8) | chunkSectors, false);
   view.setUint32(4096, 123456, false);
+  view.setInt32(8192, storedLength, false);
+  data[8196] = 2;
+  data.set(compressed, 8197);
+  return data;
+}
+
+async function makeUnicodeMca(): Promise<Uint8Array> {
+  const nbtBytes = await serializeNbt({
+    type: 'compound',
+    name: '',
+    value: {
+      CustomName: {
+        type: 'string',
+        value: 'Original 😀',
+      },
+      Untouched: {
+        type: 'string',
+        value: 'Keep 🚀',
+      },
+    },
+  });
+  const compressed = deflate(nbtBytes);
+  const storedLength = compressed.length + 1;
+  const chunkSectors = Math.ceil((storedLength + 4) / 4096);
+  const data = new Uint8Array((2 + chunkSectors) * 4096);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, (2 << 8) | chunkSectors, false);
   view.setInt32(8192, storedLength, false);
   data[8196] = 2;
   data.set(compressed, 8197);
@@ -65,6 +93,26 @@ describe('findMcaFiles', () => {
     );
     expect(reparsed.map((entry) => entry.original)).toEqual([
       '{"text":"Translated root","extra":[{"text":" Translated"}]}',
+    ]);
+  });
+
+  it('preserves supplementary Unicode elsewhere in a patched chunk', async () => {
+    const source = await makeUnicodeMca();
+    const entries = await extractFromMcaFile(source, 'world/region/r.0.0.mca', 'project');
+    const translated = entries.find((entry) => entry.original === 'Original 😀')!;
+    translated.translation = '普通文本';
+
+    const patched = await patchMcaFile(source, [translated]);
+    expect(patched.applied).toBe(1);
+
+    const reparsed = await extractFromMcaFile(
+      patched.data,
+      'world/region/r.0.0.mca',
+      'project',
+    );
+    expect(reparsed.map((entry) => entry.original)).toEqual([
+      '普通文本',
+      'Keep 🚀',
     ]);
   });
 });

@@ -61,7 +61,7 @@ describe('extractFromNbtTree', () => {
     expect(entries.map((entry) => entry.original)).toEqual([
       '{"text":"Named chest"}',
       '{"text":"Display text"}',
-      '"Modern name"',
+      'Modern name',
       'Unknown mod text',
     ]);
     expect(entries.map((entry) => entry.sourcePath)).toEqual([
@@ -70,6 +70,7 @@ describe('extractFromNbtTree', () => {
       'minecraft:custom_name',
       'mod_description',
     ]);
+    expect(entries[2]?.tags).toContain('json-string');
   });
 
   it('uses configurable string and container blacklists', () => {
@@ -149,6 +150,29 @@ describe('extractFromNbtTree', () => {
     });
 
     expect(entries).toEqual([]);
+  });
+
+  it('combines plain sign message lists into one multiline entry', () => {
+    const entries = extract({
+      type: 'compound',
+      value: {
+        front_text: {
+          type: 'compound',
+          value: {
+            messages: {
+              type: 'list',
+              value: ['"First line"', '""', '"Third line"', '""'],
+            },
+          },
+        },
+      },
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.original).toBe('First line\nThird line');
+    expect(entries[0]?.sourcePath).toBe('front_text.messages');
+    expect(entries[0]?.tags).toContain('json-string-list');
+    expect(entries[0]?.tags).toContain('json-string-list-indices:0,2');
   });
 
   it('ignores plain slash commands but keeps commands containing quoted text', () => {

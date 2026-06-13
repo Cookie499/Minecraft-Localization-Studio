@@ -1,4 +1,8 @@
 import { gzip } from 'pako';
+import {
+  encodeItemTextComponent,
+  scanItemTextComponents,
+} from '../extractors/mcfunction-item-components.js';
 import { patchMcaFile } from '../mca/parse.js';
 import { applyNbtTranslations } from '../nbt/patch.js';
 import { parseNbt, serializeNbt } from '../nbt/parse.js';
@@ -175,7 +179,31 @@ function patchMcFunctionFiles(
 
     const groups = [...entriesByLine.entries()].sort(([a], [b]) => b - a);
     for (const [lineIndex, group] of groups) {
-      const logicalLine = joinContinuedCommandLines(lines, lineIndex, group.endIndex);
+      let logicalLine = joinContinuedCommandLines(lines, lineIndex, group.endIndex);
+      const itemEntries = group.entries.filter((entry) =>
+        entry.sourcePath.startsWith(`${group.sourcePathPrefix}/item:`));
+      if (itemEntries.length > 0) {
+        const components = scanItemTextComponents(logicalLine);
+        const replacements = itemEntries.flatMap((entry) => {
+          const path = entry.sourcePath.slice(group.sourcePathPrefix.length + 1);
+          const component = components.find((candidate) => candidate.path === path);
+          return component ? [{ component, translation: entry.translation }] : [];
+        }).sort((a, b) => b.component.payloadStart - a.component.payloadStart);
+
+        for (const { component, translation } of replacements) {
+          logicalLine =
+            logicalLine.slice(0, component.payloadStart) +
+            encodeItemTextComponent(translation, component.quote) +
+            logicalLine.slice(component.payloadEnd);
+        }
+        lines.splice(
+          lineIndex,
+          group.endIndex - lineIndex + 1,
+          logicalLine,
+        );
+        continue;
+      }
+
       const payloadStart = commandPayloadStart(logicalLine);
       if (payloadStart === null) continue;
 
