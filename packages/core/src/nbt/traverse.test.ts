@@ -214,4 +214,70 @@ describe('extractFromNbtTree', () => {
       "/data modify storage demo text set value 'Translate me too'",
     ]);
   });
+
+  it('attaches entity Pos coordinates to nested text', () => {
+    const entries = extract({
+      type: 'compound',
+      value: {
+        Pos: { type: 'list', value: [12.5, 64, -3.25] },
+        CustomName: { type: 'string', value: '{"text":"Wandering trader"}' },
+      },
+    });
+
+    expect(entries[0]?.position).toEqual({
+      x: 12.5,
+      y: 64,
+      z: -3.25,
+      source: 'Pos',
+    });
+  });
+
+  it('attaches block entity x y z coordinates to nested text', () => {
+    const entries = extract({
+      type: 'compound',
+      value: {
+        x: { type: 'int', value: -8 },
+        y: { type: 'int', value: 70 },
+        z: { type: 'int', value: 24 },
+        front_text: {
+          type: 'compound',
+          value: {
+            messages: {
+              type: 'list',
+              value: ['"Line one"', '""', '""', '""'],
+            },
+          },
+        },
+      },
+    });
+
+    expect(entries[0]?.position).toEqual({
+      x: -8,
+      y: 70,
+      z: 24,
+      source: 'x y z',
+    });
+  });
+
+  it('uses structure pos coordinates for sibling NBT data', () => {
+    const entries = extract({
+      type: 'compound',
+      value: {
+        pos: { type: 'list', value: [1, 2, 3] },
+        nbt: {
+          type: 'compound',
+          value: {
+            CustomName: { type: 'string', value: '"Structure block"' },
+          },
+        },
+      },
+    });
+
+    expect(entries[0]?.position).toEqual({
+      x: 1,
+      y: 2,
+      z: 3,
+      source: 'pos',
+    });
+  });
 });

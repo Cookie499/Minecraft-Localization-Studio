@@ -1,4 +1,7 @@
-import type { TranslationEntry } from '../types/translation-entry.js';
+import type {
+  EntryPosition,
+  TranslationEntry,
+} from '../types/translation-entry.js';
 import { extractStrings } from '../text-component/index.js';
 import { createEntry } from '../extractors/base.js';
 
@@ -106,6 +109,44 @@ function normalizedKey(key: string): string {
     // .toLowerCase();
 }
 
+function asCoordinate(value: unknown): number | null {
+  const unwrapped = unwrapNbtValue(value);
+  return typeof unwrapped === 'number' && Number.isFinite(unwrapped)
+    ? unwrapped
+    : null;
+}
+
+function positionFromList(
+  value: unknown,
+  source: EntryPosition['source'],
+): EntryPosition | null {
+  const unwrapped = unwrapNbtValue(value);
+  if (!Array.isArray(unwrapped) || unwrapped.length < 3) return null;
+
+  const x = asCoordinate(unwrapped[0]);
+  const y = asCoordinate(unwrapped[1]);
+  const z = asCoordinate(unwrapped[2]);
+  return x === null || y === null || z === null
+    ? null
+    : { x, y, z, source };
+}
+
+function findPosition(record: Record<string, unknown>): EntryPosition | null {
+  for (const key of ['Pos', 'pos', 'position'] as const) {
+    if (key in record) {
+      const position = positionFromList(record[key], key);
+      if (position) return position;
+    }
+  }
+
+  const x = asCoordinate(record.x);
+  const y = asCoordinate(record.y);
+  const z = asCoordinate(record.z);
+  return x === null || y === null || z === null
+    ? null
+    : { x, y, z, source: 'x y z' };
+}
+
 /**
  * Central filter for NBT string leaves. Modify this function and the blacklist
  * constants above to fine-tune which fields become translation entries.
@@ -131,6 +172,7 @@ function addTextEntries(
   sourceType: string,
   entries: TranslationEntry[],
   options: NbtScanOptions,
+  position?: EntryPosition,
 ): void {
   const unwrapped = unwrapNbtValue(value);
   if (unwrapped === null || unwrapped === undefined) return;
@@ -161,6 +203,7 @@ function addTextEntries(
                 'text-component',
                 'whole-json',
               ],
+              position,
             }),
           );
         }
@@ -178,6 +221,7 @@ function addTextEntries(
         sourceType,
         entries,
         options,
+        position,
       );
     });
     return;
@@ -197,6 +241,7 @@ function addTextEntries(
           sourceType,
           sourcePath: path,
           tags: [sourceType, 'nbt', 'json-string'],
+          position,
         }),
       );
       return;
@@ -213,6 +258,7 @@ function addTextEntries(
         sourcePath: path,
         references: extracted.flatMap((item) => item.translateKey ? [item.translateKey] : []),
         tags: [sourceType, 'nbt', 'text-component', 'whole-json'],
+        position,
       }),
     );
     return;
@@ -226,6 +272,7 @@ function addTextEntries(
         sourceType,
         sourcePath: path,
         tags: [sourceType, 'nbt'],
+        position,
       }),
     );
   }
@@ -240,6 +287,7 @@ export function extractFromNbtTree(
   entries: TranslationEntry[],
   fieldName = '',
   options: NbtScanOptions = DEFAULT_NBT_SCAN_OPTIONS,
+  position?: EntryPosition,
 ): void {
   const unwrapped = unwrapNbtValue(node);
 
@@ -254,6 +302,7 @@ export function extractFromNbtTree(
       sourceType,
       entries,
       options,
+      position,
     );
     return;
   }
@@ -269,6 +318,7 @@ export function extractFromNbtTree(
         sourceType,
         entries,
         options,
+        position,
       );
       return;
     }
@@ -283,6 +333,7 @@ export function extractFromNbtTree(
         entries,
         fieldName,
         options,
+        position,
       );
     });
     return;
@@ -290,6 +341,7 @@ export function extractFromNbtTree(
 
   if (typeof unwrapped === 'object') {
     const record = unwrapped as Record<string, unknown>;
+    const currentPosition = findPosition(record) ?? position;
     for (const [key, child] of Object.entries(record)) {
       const childPath = path ? `${path}.${key}` : key;
       const keyName = normalizedKey(key);
@@ -307,6 +359,7 @@ export function extractFromNbtTree(
         entries,
         key,
         options,
+        currentPosition,
       );
     }
   }

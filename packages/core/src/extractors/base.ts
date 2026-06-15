@@ -24,5 +24,6 @@ export function createEntry(
     tags: params.tags ?? [],
     status: 'untranslated',
     aiGenerated: false,
+    position: params.position,
   };
 }

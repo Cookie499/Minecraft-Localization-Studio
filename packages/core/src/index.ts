@@ -1,4 +1,5 @@
 export type {
+  EntryPosition,
   TranslationEntry,
   TranslationStatus,
   ProjectMeta,

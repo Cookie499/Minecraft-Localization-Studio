@@ -223,6 +223,13 @@ export function TranslationDetailsPanel({
                   </div>
                 </div>
               )}
+              {entry.position && (
+                <DetailRow
+                  label={`Position (${entry.position.source})`}
+                  value={`${entry.position.x} ${entry.position.y} ${entry.position.z}`}
+                  mono
+                />
+              )}
               {entry.context.length > 0 && (
                 <DetailRow label="Context" value={entry.context.join(' · ')} />
               )}

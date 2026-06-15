@@ -4,6 +4,13 @@ export type TranslationStatus =
   | 'review'
   | 'approved';
 
+export interface EntryPosition {
+  x: number;
+  y: number;
+  z: number;
+  source: 'Pos' | 'pos' | 'position' | 'x y z';
+}
+
 export interface TranslationEntry {
   id: string;
   projectId: string;
@@ -18,6 +25,7 @@ export interface TranslationEntry {
   tags: string[];
   status: TranslationStatus;
   aiGenerated: boolean;
+  position?: EntryPosition;
 }
 
 export interface ProjectMeta {
