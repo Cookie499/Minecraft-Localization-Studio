@@ -12,18 +12,19 @@ function treeWith(content: string): VirtualFileTree {
 }
 
 describe('extractMcFunctions', () => {
-  it('extracts a complete tellraw JSON payload as one entry', () => {
+  it('extracts a complete quoted tellraw command as one entry', () => {
     const payload = '[{"color":"white","text":"<"},{"color":"#00FFD5","text":"T"},'
       + '{"selector":"@p[team=Red]"},{"color":"white","text":"submitted their vote"}]';
-    const entries = extractMcFunctions(treeWith(`tellraw @a ${payload}`), 'project');
+    const command = `tellraw @a ${payload}`;
+    const entries = extractMcFunctions(treeWith(command), 'project');
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.original).toBe(payload);
+    expect(entries[0]?.original).toBe(command);
     expect(entries[0]?.sourcePath).toBe('line:1');
-    expect(entries[0]?.tags).toContain('whole-json');
+    expect(entries[0]?.tags).toContain('whole-command');
   });
 
-  it('extracts and replaces a backslash-continued command as one entry', async () => {
+  it('extracts and replaces a continued quoted command as one entry', async () => {
     const source = [
       'tellraw @a [{"color":"white","text":"<"},\\',
       '  {"color":"#00FFD5","text":"T"},\\',
@@ -35,67 +36,73 @@ describe('extractMcFunctions', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]?.sourcePath).toBe('line:1-3');
     expect(entries[0]?.original).toBe(
-      '[{"color":"white","text":"<"},{"color":"#00FFD5","text":"T"},'
+      'tellraw @a [{"color":"white","text":"<"},{"color":"#00FFD5","text":"T"},'
       + '{"color":"white","text":"submitted their vote"}]',
     );
 
     entries[0]!.translation =
-      '[{"color":"white","text":"<"},{"color":"#00FFD5","text":"T"},'
-      + '{"color":"white","text":"提交了他的投票"}]';
+      'tellraw @a [{"color":"white","text":"<"},{"color":"#00FFD5","text":"T"},'
+      + '{"color":"white","text":"submitted the translated vote"}]';
     const patched = await buildPatchedTree(tree, entries);
 
-    expect(patched[0]?.content).toBe(
-      'tellraw @a [{"color":"white","text":"<"},{"color":"#00FFD5","text":"T"},'
-      + '{"color":"white","text":"提交了他的投票"}]',
-    );
+    expect(patched[0]?.content).toBe(entries[0]!.translation);
   });
-  it('extracts only the JSON payload from an execute-wrapped title command', () => {
+
+  it('extracts the complete execute-wrapped title command', () => {
     const payload = '[{"color":"red","text":"You"},'
       + '{"color":"white","text":" decided to fulfill your "},'
-      + '{"color":"red","text":"duty"},{"color":"white","text":""}]';
+      + '{"color":"red","text":"duty"}]';
     const command = 'execute in minecraft:overworld '
       + 'if score $endingTimer count matches 40 '
       + `run title @a[team=Red] subtitle ${payload}`;
     const entries = extractMcFunctions(treeWith(command), 'project');
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.original).toBe(payload);
-    expect(entries[0]?.original).not.toContain('ld if score');
-    expect(entries[0]?.tags).toContain('whole-json');
+    expect(entries[0]?.original).toBe(command);
+    expect(entries[0]?.tags).toContain('whole-command');
   });
 
-  it('extracts and replaces item custom_name and lore components', async () => {
+  it('extracts and replaces a complete quoted item command', async () => {
     const command = 'execute if score $arcadeTickets count matches 30 run item replace block '
       + '-209 113 66 container.0 with minecraft:paper['
       + 'custom_name=\'{"color":"yellow","italic":false,"text":"Arcade Ticket"}\','
       + 'lore=[\'{"color":"light_purple","italic":false,"text":"Arcade Currency"}\','
-      + '\'" "\','
-      + '\'[{"color":"gray","italic":false,"text":"Can be redeemed at the "},'
-      + '{"color":"red","italic":false,"text":"Prize Vendor "}]\''
-      + ']] 30';
+      + '\'" "\']] 30';
     const tree = treeWith(command);
     const entries = extractMcFunctions(tree, 'project');
 
-    expect(entries.map((entry) => entry.sourcePath)).toEqual([
-      'line:1/item:custom_name',
-      'line:1/item:lore:0',
-      'line:1/item:lore:1',
-      'line:1/item:lore:2',
-    ]);
-    expect(entries[0]?.original).toContain('Arcade Ticket');
-    expect(entries[2]?.original).toBe('" "');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.original).toBe(command);
+    expect(entries[0]?.tags).toContain('whole-command');
 
-    entries[0]!.translation =
-      '{"color":"yellow","italic":false,"text":"游戏厅奖券"}';
-    entries[2]!.translation = '" · "';
+    entries[0]!.translation = command
+      .replace('Arcade Ticket', 'Translated Ticket')
+      .replace('Arcade Currency', 'Translated Currency');
     const patched = await buildPatchedTree(tree, entries);
-    const output = String(patched[0]?.content);
 
-    expect(output).toContain(
-      'custom_name=\'{"color":"yellow","italic":false,"text":"游戏厅奖券"}\'',
+    expect(patched[0]?.content).toBe(entries[0]!.translation);
+  });
+
+  it('extracts quoted data, component, and legacy NBT commands without command rules', () => {
+    const commands = [
+      'data modify storage demo:state foo.bar set value "Readable text"',
+      'give @s minecraft:paper[minecraft:custom_data={label:"Component text"}]',
+      'setblock ~ ~ ~ minecraft:chest{CustomName:"Legacy NBT text"}',
+    ].join('\n');
+    const entries = extractMcFunctions(treeWith(commands), 'project');
+
+    expect(entries.map((entry) => entry.original)).toEqual(commands.split('\n'));
+    expect(entries.every((entry) => entry.tags.includes('whole-command'))).toBe(true);
+  });
+
+  it('keeps the legacy command-specific extraction for unquoted commands', () => {
+    const entries = extractMcFunctions(
+      treeWith('team add builders Builder Team'),
+      'project',
     );
-    expect(output).toContain('lore=[\'{"color":"light_purple"');
-    expect(output).toContain('\'" · "\'');
-    expect(output).toMatch(/\]\] 30$/);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.original).toBe('Builder Team');
+    expect(entries[0]?.tags).toContain('raw');
   });
 });

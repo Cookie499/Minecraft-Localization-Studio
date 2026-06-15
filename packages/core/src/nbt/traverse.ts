@@ -140,24 +140,26 @@ function addTextEntries(
       const decoded = unwrapped.map((item) => {
         if (typeof item !== 'string') return null;
         const json = tryParseJsonString(item);
-        return json.parsed && typeof json.value === 'string' ? json.value : null;
+        return json.parsed ? json.value : null;
       });
       if (decoded.every((item) => item !== null)) {
-        const nonEmpty = decoded.flatMap((item, index) =>
-          item && item.trim().length > 0 ? [{ index, text: item }] : []);
-        if (nonEmpty.length > 0) {
+        const extracted = extractStrings(decoded);
+        if (extracted.length > 0) {
           entries.push(
             createEntry(projectId, {
-              original: nonEmpty.map((item) => item.text).join('\n'),
+              original: JSON.stringify(decoded),
               sourceFile: filePath,
               sourceType,
               sourcePath: path,
-              context: [`sign messages: ${nonEmpty.length} non-empty line(s)`],
+              context: [`sign messages: ${decoded.length} line(s)`],
+              references: extracted.flatMap((item) =>
+                item.translateKey ? [item.translateKey] : []),
               tags: [
                 sourceType,
                 'nbt',
-                'json-string-list',
-                `json-string-list-indices:${nonEmpty.map((item) => item.index).join(',')}`,
+                'sign-message-array',
+                'text-component',
+                'whole-json',
               ],
             }),
           );

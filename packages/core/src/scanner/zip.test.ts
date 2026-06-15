@@ -50,7 +50,7 @@ describe('nested data pack ZIP scanning', () => {
     expect(Object.keys(outer.files).some((path) => path.includes('.zip!'))).toBe(false);
   });
 
-  it('writes translations back into a nested data pack before repackaging', async () => {
+  it('writes complete quoted commands back before repackaging', async () => {
     const tree = await expandNestedDataPackZips([{
       path: 'world/datapacks/demo.zip',
       content: await nestedDataPack(),
@@ -59,7 +59,7 @@ describe('nested data pack ZIP scanning', () => {
     const functionFile = tree.find((file) => file.path.endsWith('start.mcfunction'))!;
     functionFile.content = 'tellraw @a {"text":"hello"}';
     const entries = extractMcFunctions(tree, 'project');
-    entries[0]!.translation = '{"text":"你好"}';
+    entries[0]!.translation = 'tellraw @a {"text":"translated hello"}';
 
     const patched = await buildPatchedTree(tree, entries);
     const exported = await exportTreeAsZip(patched);
@@ -68,7 +68,7 @@ describe('nested data pack ZIP scanning', () => {
     const nested = await JSZip.loadAsync(nestedBytes);
 
     expect(await nested.file('data/demo/functions/start.mcfunction')!.async('string'))
-      .toBe('tellraw @a {"text":"你好"}');
+      .toBe('tellraw @a {"text":"translated hello"}');
     expect(Object.keys(outer.files).some((path) => path.includes('.zip!'))).toBe(false);
   });
 });

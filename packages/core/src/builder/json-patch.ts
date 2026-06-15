@@ -180,6 +180,18 @@ function patchMcFunctionFiles(
     const groups = [...entriesByLine.entries()].sort(([a], [b]) => b - a);
     for (const [lineIndex, group] of groups) {
       let logicalLine = joinContinuedCommandLines(lines, lineIndex, group.endIndex);
+      const wholeCommandEntry = group.entries.find((entry) =>
+        entry.sourcePath === group.sourcePathPrefix &&
+        entry.tags.includes('whole-command'));
+      if (wholeCommandEntry) {
+        lines.splice(
+          lineIndex,
+          group.endIndex - lineIndex + 1,
+          wholeCommandEntry.translation,
+        );
+        continue;
+      }
+
       const itemEntries = group.entries.filter((entry) =>
         entry.sourcePath.startsWith(`${group.sourcePathPrefix}/item:`));
       if (itemEntries.length > 0) {

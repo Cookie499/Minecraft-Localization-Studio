@@ -68,6 +68,20 @@ export function extractMcFunctions(tree: VirtualFileTree, projectId: string): Tr
 
       if (!trimmed || trimmed.startsWith('#')) continue;
 
+      if (trimmed.includes('"')) {
+        entries.push(
+          createEntry(projectId, {
+            original: trimmed,
+            sourceFile: file.path,
+            sourceType: 'mcfunction',
+            sourcePath,
+            context: [trimmed.split(/\s+/, 1)[0] ?? 'command'],
+            tags: ['mcfunction', 'whole-command', 'quoted'],
+          }),
+        );
+        continue;
+      }
+
       const itemComponents = scanItemTextComponents(trimmed);
       for (const component of itemComponents) {
         const parsed = tryParseJsonOrSnbt(component.payload);

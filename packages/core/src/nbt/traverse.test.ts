@@ -152,7 +152,7 @@ describe('extractFromNbtTree', () => {
     expect(entries).toEqual([]);
   });
 
-  it('combines plain sign message lists into one multiline entry', () => {
+  it('combines plain sign message lists into one JSON array entry', () => {
     const entries = extract({
       type: 'compound',
       value: {
@@ -169,10 +169,34 @@ describe('extractFromNbtTree', () => {
     });
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.original).toBe('First line\nThird line');
+    expect(entries[0]?.original).toBe('["First line","","Third line",""]');
     expect(entries[0]?.sourcePath).toBe('front_text.messages');
-    expect(entries[0]?.tags).toContain('json-string-list');
-    expect(entries[0]?.tags).toContain('json-string-list-indices:0,2');
+    expect(entries[0]?.tags).toContain('sign-message-array');
+    expect(entries[0]?.tags).toContain('whole-json');
+  });
+
+  it('combines styled sign messages into one JSON array entry', () => {
+    const entries = extract({
+      type: 'compound',
+      value: {
+        messages: {
+          type: 'list',
+          value: [
+            '{"text":"First","color":"gold"}',
+            '[{"text":"Second"},{"text":" line","bold":true}]',
+            '""',
+            '"Plain fourth"',
+          ],
+        },
+      },
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.original).toBe(
+      '[{"text":"First","color":"gold"},[{"text":"Second"},{"text":" line","bold":true}],"","Plain fourth"]',
+    );
+    expect(entries[0]?.sourcePath).toBe('messages');
+    expect(entries[0]?.tags).toContain('sign-message-array');
   });
 
   it('ignores plain slash commands but keeps commands containing quoted text', () => {

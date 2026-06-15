@@ -24,7 +24,7 @@ describe('data pack path compatibility', () => {
     ];
 
     expect(extractMcFunctions(tree, 'project').map((entry) => entry.original))
-      .toContain('{"text":"Function text"}');
+      .toContain('tellraw @a {"text":"Function text"}');
     expect(extractLootTables(tree, 'project').map((entry) => entry.original))
       .toContain('Loot text');
   });

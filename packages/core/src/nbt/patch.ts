@@ -118,6 +118,22 @@ export function applyNbtTranslations(
       ? entry.sourcePath.slice(pathPrefix.length).replace(/^\./, '')
       : entry.sourcePath;
 
+    if (entry.tags.includes('sign-message-array')) {
+      const list = findStringList(root, sourcePath);
+      if (!list) continue;
+      try {
+        const translated = JSON.parse(entry.translation) as unknown;
+        if (!Array.isArray(translated) || translated.length !== list.length) continue;
+        translated.forEach((item, index) => {
+          list[index] = JSON.stringify(item);
+        });
+        applied++;
+      } catch {
+        // Invalid or structurally incompatible JSON is preserved unchanged.
+      }
+      continue;
+    }
+
     if (entry.tags.includes('json-string-list')) {
       const list = findStringList(root, sourcePath);
       const indexTag = entry.tags.find((tag) =>
