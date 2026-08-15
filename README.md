@@ -66,20 +66,6 @@ packages/
 
 ---
 
-## Development Status
-
-**Phase 0–1 已完成（MVP）**
-
-- [x] Monorepo 脚手架（Vite + React + TS）
-- [x] TranslationEntry 模型 + IndexedDB 工作区
-- [x] 文件夹 / ZIP 导入
-- [x] Lang、mcmeta、advancement、loot、mcfunction 提取
-- [x] Text Component 解析
-- [x] Structure NBT、level.dat、playerdata、MCA 提取
-- [x] Lang JSON 写回 + ZIP 导出
-
----
-
 ## Goal
 
 Build a complete localization platform for Minecraft projects instead of a simple machine translation tool.
